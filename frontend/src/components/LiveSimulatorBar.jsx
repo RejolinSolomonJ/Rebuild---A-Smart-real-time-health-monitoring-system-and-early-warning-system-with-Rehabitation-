@@ -8,15 +8,15 @@ export default function LiveSimulatorBar({ lang = "en" }) {
   const timerRef = useRef(null);
 
   const scenarios = [
-    { id: "normal", label: "Normal Vitals", icon: Activity, color: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10", desc: "Stable resting HR 72, Temp 36.6°C, normal movement." },
-    { id: "hr_disconnected", label: "HR Sensor Off", icon: HeartOff, color: "text-rose-400 border-rose-500/30 bg-rose-500/10", desc: "Pulse sensor unplugged (hr_ok=0): displays 'Heartbeat Not Connected' across all views." },
-    { id: "drift", label: "Cardiac Drift", icon: Sliders, color: "text-amber-400 border-amber-500/30 bg-amber-500/10", desc: "Resting HR slowly elevates +18% while patient remains still." },
-    { id: "fever", label: "Fever (38.5°C)", icon: Thermometer, color: "text-red-400 border-red-500/30 bg-red-500/10", desc: "Core temperature climbs to 38.5°C (mild hyperthermia)." },
-    { id: "heat_stress", label: "Heat Stress", icon: Flame, color: "text-orange-400 border-orange-500/30 bg-orange-500/10", desc: "Outdoor worker: High HR + elevated temp in active motion." },
+    { id: "normal", label: "Normal (Green)", icon: Activity, color: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10", desc: "Optimal Vitals: HR 74, SpO2 98%, Temp 36.6°C. Auto-assigns Full Functional Active Routine." },
+    { id: "hr_yellow", label: "Elevated HR (Yellow)", icon: Sliders, color: "text-amber-400 border-amber-500/30 bg-amber-500/10", desc: "HR 104 BPM (Yellow category): Automatically dispatches warning and auto-assigns Low-Cardiac Seated Routine." },
+    { id: "hr_low", label: "Low HR (Yellow)", icon: Sliders, color: "text-amber-400 border-amber-500/30 bg-amber-500/10", desc: "HR 52 BPM (Yellow category): Auto-assigns Venous Return & Calf Muscle Pump Routine." },
+    { id: "spo2_desat", label: "SpO2 93% (Yellow)", icon: Activity, color: "text-sky-400 border-sky-500/30 bg-sky-500/10", desc: "SpO2 desaturates to 93% (Yellow): Auto-assigns Thoracic Respiratory Expansion Routine." },
+    { id: "humidity_high", label: "Humidity 78% (Yellow)", icon: Flame, color: "text-amber-400 border-amber-500/30 bg-amber-500/10", desc: "Humidity 78% (Yellow): Auto-assigns Extended Rest Low-Thermal Burden Routine." },
+    { id: "fever", label: "Fever 38.6°C (Red)", icon: Thermometer, color: "text-red-400 border-red-500/30 bg-red-500/10", desc: "Temp climbs to 38.6°C (Critical Red): Halts rehabilitation, empties exercises, dispatches Urgent Medical Stop." },
+    { id: "spo2_critical", label: "SpO2 88% (Red)", icon: AlertOctagon, color: "text-red-400 border-red-500/30 bg-red-500/10", desc: "SpO2 drops to 88% (Critical Red): Immediate Medical Stop and emergency alert." },
     { id: "fall", label: "Simulate Fall", icon: AlertOctagon, color: "text-rose-400 border-rose-500/30 bg-rose-500/10", desc: "Sudden impact burst (vib=55) followed by stillness (30s countdown)." },
     { id: "inactivity", label: "Inactivity (30s)", icon: Clock, color: "text-sky-400 border-sky-500/30 bg-sky-500/10", desc: "PIR motion=0 for >30s demo threshold (prompts movement buzzer 2)." },
-    { id: "low_signal", label: "Arm Artifact", icon: Radio, color: "text-purple-400 border-purple-500/30 bg-purple-500/10", desc: "Arm=1 wrist movement: verifies artifact suppression (no false alerts)." },
-    { id: "vitals_spike", label: "HR Spike (135)", icon: AlertOctagon, color: "text-red-400 border-red-500/30 bg-red-500/10", desc: "Exercise HR exceeds 125 limit to trigger MoveSafe Safe Pause." },
   ];
 
   const stopSimulation = () => {
@@ -35,9 +35,10 @@ export default function LiveSimulatorBar({ lang = "en" }) {
       step++;
       setStepCount(step);
 
-      let hr = 72;
+      let hr = 74;
       let hr_ok = true;
       let temp = 36.6;
+      let spo2 = 98.0;
       let humidity = 52.0;
       let motion = step % 8 === 0 ? 1 : 0;
       let idle_s = motion === 1 ? 0 : step;
@@ -46,28 +47,40 @@ export default function LiveSimulatorBar({ lang = "en" }) {
       let arm = 0;
 
       if (scenId === "normal") {
-        hr = 72 + (step % 3) - 1;
+        hr = 74 + (step % 3) - 1;
+        spo2 = 98.0 + (step % 2) * 0.2;
+        temp = 36.6;
         humidity = 52.0 + (step % 3) * 0.5;
-      } else if (scenId === "hr_disconnected") {
-        hr = 0;
-        hr_ok = false;
-        humidity = 52.0;
-        motion = 0;
-      } else if (scenId === "drift") {
-        motion = 0;
-        idle_s = step;
-        hr = Math.min(94, 72 + Math.floor(step * 1.5));
+      } else if (scenId === "hr_yellow") {
+        hr = 104; // Yellow category heart rate
+        spo2 = 97.5;
+        temp = 36.7;
         humidity = 54.0;
+      } else if (scenId === "hr_low") {
+        hr = 52; // Low heart rate / borderline bradycardia (Yellow)
+        spo2 = 97.0;
+        temp = 36.5;
+        humidity = 50.0;
+      } else if (scenId === "spo2_desat") {
+        hr = 78;
+        spo2 = 93.0; // Desaturation (Yellow)
+        temp = 36.6;
+        humidity = 52.0;
+      } else if (scenId === "humidity_high") {
+        hr = 76;
+        spo2 = 98.0;
+        temp = 36.8;
+        humidity = 78.0; // High humidity (Yellow)
       } else if (scenId === "fever") {
-        temp = Math.min(38.8, +(36.6 + step * 0.15).toFixed(1));
-        hr = 72 + Math.floor((temp - 36.6) * 10);
+        temp = 38.6; // Critical fever (Red)
+        hr = 98;
+        spo2 = 96.0;
         humidity = 64.0;
-      } else if (scenId === "heat_stress") {
-        temp = Math.min(38.3, +(37.2 + step * 0.1).toFixed(1));
-        hr = Math.min(118, 98 + step);
-        motion = 1;
-        vib = 15;
-        humidity = Math.min(85.0, +(72.0 + step * 1.2).toFixed(1));
+      } else if (scenId === "spo2_critical") {
+        hr = 88;
+        spo2 = 88.0; // Critical hypoxemia (Red)
+        temp = 36.6;
+        humidity = 52.0;
       } else if (scenId === "fall") {
         humidity = 50.0;
         if (step === 2) {
@@ -85,15 +98,6 @@ export default function LiveSimulatorBar({ lang = "en" }) {
         motion = 0;
         idle_s = step + 25; // Accelerate to exceed 30s threshold quickly
         humidity = 48.0;
-      } else if (scenId === "low_signal") {
-        arm = 1;
-        vib = 22;
-        hr = 115; // Spike with arm movement; must be discarded as low_signal
-        humidity = 52.5;
-      } else if (scenId === "vitals_spike") {
-        hr = Math.min(140, 95 + step * 5);
-        motion = 1;
-        humidity = 58.0;
       }
 
       const readingPayload = {
@@ -101,6 +105,7 @@ export default function LiveSimulatorBar({ lang = "en" }) {
         hr,
         hr_ok,
         temp,
+        spo2,
         humidity,
         motion,
         idle_s,

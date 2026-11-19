@@ -471,31 +471,43 @@ export default function MoveSafeSession({
           "RED"
         );
       }
-      // 2. Warning YELLOW triggers (Session paused for reassessment)
+      // 2. Warning YELLOW triggers (Session paused for reassessment & protective auto-adaptation)
       else if (spo2 < 95.0) {
         triggerSafePause(
-          `Warning: Oxygen desaturation (SpO2 ${Math.round(spo2)}% < 95%). Session paused for deep diaphragmatic breathing.`,
-          "YELLOW"
+          `⚡ Autonomous Adaptation: Oxygen desaturation (SpO2 ${Math.round(spo2)}% < 95%). Routine automatically adapted to Thoracic Respiratory Expansion Protocol.`,
+          "YELLOW",
+          "shoulder_raise"
         );
       } else if (hrOk && hr > 105) {
         triggerSafePause(
-          `Warning: Elevated resting heart rate (${hr} BPM > 105 BPM). Pausing for seated hydration.`,
-          "YELLOW"
+          `⚡ Autonomous Adaptation: Elevated heart rate (${hr} BPM > 105 BPM). Routine automatically adapted to Low-Cardiac Seated Protocol.`,
+          "YELLOW",
+          "seated_knee_extension"
+        );
+      } else if (hrOk && hr < 55) {
+        triggerSafePause(
+          `⚡ Autonomous Adaptation: Borderline low heart rate (${hr} BPM). Routine automatically adapted to Venous Return & Calf Pump Protocol.`,
+          "YELLOW",
+          "standing_heel_raise"
         );
       } else if (temp >= 37.6) {
         triggerSafePause(
-          `Warning: Low-grade thermal elevation (${temp.toFixed(1)}°C). Pausing for cooling rest.`,
-          "YELLOW"
+          `⚡ Autonomous Adaptation: Low-grade thermal elevation (${temp.toFixed(1)}°C). Routine automatically adapted to Minimal Metabolic Protocol.`,
+          "YELLOW",
+          "seated_knee_extension"
         );
       }
     }
   }, [latestReading, step, plan, lang]);
 
-  const triggerSafePause = (reason, severity = "YELLOW") => {
+  const triggerSafePause = (reason, severity = "YELLOW", autoExerciseKey = null) => {
     setPauseReason(reason);
     setPauseSeverity(severity);
     setStep("paused");
     setSafePausesCount((prev) => prev + 1);
+    if (autoExerciseKey && exerciseKeys.includes(autoExerciseKey)) {
+      setSelectedExKey(autoExerciseKey);
+    }
     audioAlerts.play(severity);
     safeSpeak(
       severity === "RED"

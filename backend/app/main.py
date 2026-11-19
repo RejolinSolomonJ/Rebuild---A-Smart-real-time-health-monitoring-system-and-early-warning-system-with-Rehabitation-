@@ -89,6 +89,15 @@ recovery_scorer = RecoveryScoreCalculator()
 alert_dispatcher = AlertDispatcher()
 recommender_engine = ExerciseRecommendationEngine()
 
+# Real-time Autonomous Adaptation State Tracker
+_last_auto_state = {
+    "tier": None,
+    "category": None,
+    "trigger_param": None,
+    "last_db_plan_id": None,
+    "last_alert_time": 0.0
+}
+
 # WebSocket Connection Manager
 class ConnectionManager:
     def __init__(self):
@@ -286,6 +295,92 @@ async def ingest_reading_async(data: Dict[str, Any], db: Optional[Session] = Non
         db.commit()
         db.refresh(db_reading)
 
+        # -------------------------------------------------------------
+        # 6. Autonomous Vital-Based Prescription & Notification Engine
+        # -------------------------------------------------------------
+        global _last_auto_state
+        person_obj = db.query(Person).filter(Person.id == 1).first()
+        person_dict = {
+            "name": person_obj.name if person_obj else "Ramesh Kumar",
+            "age": person_obj.age if person_obj else 68,
+            "conditions": person_obj.conditions if person_obj else "Mild osteoarthritis",
+            "profile_type": person_obj.profile_type if person_obj else "elderly",
+            "resting_hr_baseline": getattr(person_obj, "resting_hr_baseline", 72.0)
+        }
+        reading_dict = {
+            "hr": db_reading.hr,
+            "hr_ok": db_reading.hr_ok,
+            "temp": db_reading.temp,
+            "spo2": db_reading.spo2 if db_reading.spo2 is not None else 98.0,
+            "humidity": db_reading.humidity,
+            "idle_s": db_reading.idle_s,
+            "risk_band": db_reading.risk_band,
+            "source": "HARDWARE_SERIAL" if (serial_worker and getattr(serial_worker, 'serial_connected', False)) else "SIMULATED"
+        }
+
+        rec = recommender_engine.generate_recommendation(
+            person=person_dict,
+            current_reading=reading_dict,
+            recent_sessions=[]
+        )
+
+        curr_tier = rec.get("tier")
+        curr_cat = rec.get("overall_category", "GREEN")
+        curr_trigger = rec.get("trigger_parameter", "optimal")
+
+        state_changed = (
+            _last_auto_state["tier"] != curr_tier or
+            _last_auto_state["category"] != curr_cat or
+            _last_auto_state["trigger_param"] != curr_trigger
+        )
+
+        if state_changed:
+            _last_auto_state["tier"] = curr_tier
+            _last_auto_state["category"] = curr_cat
+            _last_auto_state["trigger_param"] = curr_trigger
+
+            # Automatically update/create ExercisePlan in SQLite DB
+            is_approved = (curr_cat != "RED")
+            new_auto_plan = ExercisePlan(
+                person_id=1,
+                title=rec.get("tier_name", "Autonomous Adaptive Rehabilitation"),
+                notes=rec.get("advice", ""),
+                approved_by_physio=is_approved,
+                physio_name="Autonomous Vital Recommendation Engine (Dr. Kavitha Protocol)",
+                max_hr_limit=rec.get("max_prescribed_hr", 125 if curr_cat == "GREEN" else 115),
+                max_borg_limit=rec.get("max_prescribed_borg", 13),
+                min_temp_margin=1.2
+            )
+            db.add(new_auto_plan)
+            db.commit()
+            db.refresh(new_auto_plan)
+            _last_auto_state["last_db_plan_id"] = new_auto_plan.id
+
+            for idx, item in enumerate(rec.get("prescribed_exercises", [])):
+                db.add(ExerciseItem(
+                    plan_id=new_auto_plan.id,
+                    exercise_id=item["id"],
+                    exercise_name=item["name"],
+                    target_sets=item.get("default_sets", 2),
+                    target_reps=item.get("default_reps", 10),
+                    rest_s=item.get("rest_s", 30),
+                    order_idx=idx
+                ))
+            db.commit()
+
+            # Automatically log Alert in DB when non-green
+            if curr_cat in ["YELLOW", "RED"]:
+                db_alert = Alert(
+                    person_id=1,
+                    alert_type=f"VITAL_{curr_cat}_{curr_trigger.upper()}",
+                    severity="urgent" if curr_cat == "RED" else "warning",
+                    reason=f"[{curr_cat}] {rec.get('tier_name')}: {rec.get('advice')}",
+                    sms_sent=True,
+                    acknowledged=False
+                )
+                db.add(db_alert)
+                db.commit()
+
         # 7. Broadcast via WebSocket
         ws_payload = {
             "type": "telemetry",
@@ -314,9 +409,36 @@ async def ingest_reading_async(data: Dict[str, Any], db: Optional[Session] = Non
                 "countdown_active": fall_status.get("countdown_active", False),
                 "remaining_seconds": fall_status.get("remaining_seconds", 0),
                 "log": fall_status.get("log", "")
+            },
+            "auto_plan": {
+                "updated": state_changed,
+                "plan_id": _last_auto_state.get("last_db_plan_id"),
+                "tier": curr_tier,
+                "tier_name": rec.get("tier_name"),
+                "overall_category": curr_cat,
+                "trigger_parameter": curr_trigger,
+                "can_exercise": rec.get("can_exercise"),
+                "advice": rec.get("advice"),
+                "reasons": rec.get("clinical_reasoning", []),
+                "notifications": rec.get("notifications", []),
+                "prescribed_exercises": rec.get("prescribed_exercises", []),
+                "max_hr": rec.get("max_prescribed_hr", 125)
             }
         }
         await ws_manager.broadcast(ws_payload)
+
+        if state_changed:
+            await ws_manager.broadcast({
+                "type": "auto_plan_notification",
+                "plan_id": _last_auto_state.get("last_db_plan_id"),
+                "category": curr_cat,
+                "tier_name": rec.get("tier_name"),
+                "trigger_parameter": curr_trigger,
+                "advice": rec.get("advice"),
+                "notifications": rec.get("notifications", []),
+                "prescribed_exercises": rec.get("prescribed_exercises", []),
+                "timestamp": datetime.utcnow().isoformat()
+            })
 
     finally:
         if close_db:
@@ -368,7 +490,7 @@ async def continuous_telemetry_loop():
             }
             await ingest_reading_async(reading_dict)
         except Exception as e:
-            logger.error(f"Error in continuous telemetry loop: {e}")
+            print(f"Error in continuous telemetry loop: {e}")
 
 # Startup & Seeding
 @app.on_event("startup")
@@ -819,10 +941,10 @@ def apply_recommended_plan(id: int, db: Session = Depends(get_db)):
     Safely enforces that critical/warning vitals block automatic routine application.
     """
     rec = get_exercise_recommendation(id=id, db=db)
-    if not rec.get("can_exercise", True) or rec.get("overall_category") != "GREEN":
+    if rec.get("overall_category") == "RED":
         raise HTTPException(
             status_code=400,
-            detail=f"Rehabilitation safety block: Cannot apply exercise plan while parameters are in {rec.get('overall_category')} state. {rec.get('advice')}"
+            detail=f"Rehabilitation safety block: Cannot apply exercise plan while parameters are in RED critical state. {rec.get('advice')}"
         )
 
     person = db.query(Person).filter(Person.id == id).first()

@@ -25,6 +25,8 @@ import ProgressView from "./views/ProgressView";
 import SettingsView from "./views/SettingsView";
 import LoginModal from "./views/LoginModal";
 import MobileBottomNav from "./components/MobileBottomNav";
+import { Zap, X, ChevronRight, AlertOctagon, AlertTriangle, CheckCircle } from "lucide-react";
+import { audioAlerts } from "./rehab/vitalRehabEngine";
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState({
@@ -88,6 +90,34 @@ export default function App() {
 
   // WebSocket Reference
   const wsRef = useRef(null);
+
+  // Autonomous Adaptation State
+  const [autoNotification, setAutoNotification] = useState(null);
+  const autoDismissTimerRef = useRef(null);
+
+  const triggerAutoNotification = (data) => {
+    if (!data) return;
+    const cat = data.category || data.overall_category || "GREEN";
+    try {
+      audioAlerts.play(cat);
+    } catch (_) {}
+
+    setAutoNotification({
+      id: Date.now(),
+      category: cat,
+      tier_name: data.tier_name || "Autonomous Adaptive Routine",
+      trigger_parameter: data.trigger_parameter || "vitals",
+      advice: data.advice || "",
+      prescribed_exercises: data.prescribed_exercises || [],
+      notifications: data.notifications || [],
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    });
+
+    if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current);
+    autoDismissTimerRef.current = setTimeout(() => {
+      setAutoNotification(null);
+    }, 12000);
+  };
 
   const fetchPlan = () => {
     fetch("/api/persons/1/plan")
@@ -162,6 +192,16 @@ export default function App() {
             if (payload.fall_state) {
               setFallState(payload.fall_state);
             }
+
+            if (payload.auto_plan) {
+              if (payload.auto_plan.updated) {
+                fetchPlan();
+                triggerAutoNotification(payload.auto_plan);
+              }
+            }
+          } else if (payload.type === "auto_plan_notification") {
+            fetchPlan();
+            triggerAutoNotification(payload);
           } else if (payload.type === "fall_cancelled") {
             setFallState(payload.fall_state);
           }
@@ -390,6 +430,105 @@ export default function App() {
           onCancelOk={handleReportOk}
           lang={lang}
         />
+
+        {/* Floating Autonomous Vital Adaptation Notification Banner */}
+        {autoNotification && (
+          <div className="px-3 sm:px-5 lg:px-7 pt-3">
+            <div
+              className={`rounded-2xl p-4 border transition-all duration-300 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in ${
+                autoNotification.category === "RED"
+                  ? "bg-[#200d0d] border-red-500/70 text-red-200 shadow-[0_0_30px_rgba(239,68,68,0.3)]"
+                  : autoNotification.category === "YELLOW"
+                  ? "bg-[#20180d] border-amber-500/70 text-amber-200 shadow-[0_0_30px_rgba(245,158,11,0.25)]"
+                  : "bg-[#0d1d13] border-emerald-500/70 text-emerald-200 shadow-[0_0_30px_rgba(34,197,94,0.25)]"
+              }`}
+            >
+              <div className="flex items-start gap-3.5">
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                    autoNotification.category === "RED"
+                      ? "bg-red-500/20 text-red-400 border-red-500/40 animate-pulse"
+                      : autoNotification.category === "YELLOW"
+                      ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
+                      : "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
+                  }`}
+                >
+                  {autoNotification.category === "RED" ? (
+                    <AlertOctagon className="w-5 h-5" />
+                  ) : autoNotification.category === "YELLOW" ? (
+                    <AlertTriangle className="w-5 h-5" />
+                  ) : (
+                    <Zap className="w-5 h-5 text-emerald-400" />
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-bold font-mono uppercase px-2 py-0.5 rounded tracking-wide bg-black/40 border border-white/10">
+                      ⚡ Complete Automation
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded uppercase ${
+                        autoNotification.category === "RED"
+                          ? "bg-red-500 text-black font-extrabold"
+                          : autoNotification.category === "YELLOW"
+                          ? "bg-amber-400 text-black font-extrabold"
+                          : "bg-emerald-400 text-black font-extrabold"
+                      }`}
+                    >
+                      {autoNotification.category} Category
+                    </span>
+                    <span className="text-xs text-stone-400 font-mono">
+                      {autoNotification.timestamp}
+                    </span>
+                  </div>
+
+                  <h3 className="text-sm font-black text-white">
+                    {autoNotification.tier_name}
+                  </h3>
+
+                  <p className="text-xs text-stone-300 leading-relaxed max-w-3xl">
+                    {autoNotification.advice}
+                  </p>
+
+                  {autoNotification.prescribed_exercises?.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1 text-xs font-mono text-stone-400">
+                      <span className="text-white font-semibold">Auto-Assigned Session:</span>
+                      {autoNotification.prescribed_exercises.map((ex, i) => (
+                        <span
+                          key={ex.id || i}
+                          className="bg-black/30 border border-white/10 px-2 py-0.5 rounded text-[11px] text-stone-200"
+                        >
+                          {i + 1}. {ex.name} ({ex.default_sets || 2} sets × {ex.default_reps || 8} reps)
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                <button
+                  onClick={() => {
+                    setActiveTab("workouts");
+                    setActiveSession(false);
+                  }}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white border border-white/20 flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <span>View Prescribed Routine</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setAutoNotification(null)}
+                  className="p-2 rounded-xl text-stone-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+                  title="Dismiss alert"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Main Body Content Based on Active Tab / Role */}
         <main className="flex-1 p-3 sm:p-5 lg:p-7 max-w-[1600px] w-full mx-auto pb-24 lg:pb-8">

@@ -1,6 +1,8 @@
 """
 ReBuild Smart Vital Parameter-Based Rehabilitation Recommendation Engine
-Strictly adheres to the 4 approved clinical exercises:
+Complete Automation: Automatically assigns suitable exercise sessions for each parameter.
+
+Canonical Exercises (Strictly the 4 Approved):
 1. Seated Knee Extension
 2. Sit to Stand (Chair Stand)
 3. Standing Heel Raise
@@ -13,9 +15,9 @@ Parameters Monitored:
 - Environmental Humidity (%)
 
 Notification Categories:
-- GREEN: Parameters within prescribed limits. Display assigned exercise.
-- YELLOW: Abnormal readings. Pause exercise, reassess and display a warning.
-- RED: Critical readings or concerning symptoms. Stop rehabilitation and display urgent medical instructions.
+- GREEN: Parameters within prescribed limits. Auto-assigns full functional active routine.
+- YELLOW: Abnormal parameter detected. Auto-assigns parameter-specific protective routine and dispatches warning notification.
+- RED: Critical readings or acute symptoms. Medical stop, halts all exercises, dispatches urgent medical instructions.
 """
 
 from typing import Dict, Any, List, Optional
@@ -113,6 +115,7 @@ class ExerciseRecommendationEngine:
         now_iso = datetime.utcnow().isoformat()
         notifications: List[Dict[str, Any]] = []
         statuses: Dict[str, Dict[str, Any]] = {}
+        trigger_parameter = "optimal"
 
         # 1. Heart Rate
         hr_status = "NORMAL"
@@ -123,6 +126,7 @@ class ExerciseRecommendationEngine:
             hr_status = "WARNING"
             hr_reason = "Pulse signal intermittent or sensor displaced."
             hr_action = "Reposition pulse sensor on finger before initiating exercise."
+            trigger_parameter = "hr"
             notifications.append({
                 "parameter": "Heart Rate",
                 "value": "Disconnected / Signal Artifact",
@@ -133,11 +137,12 @@ class ExerciseRecommendationEngine:
             })
         elif hr < thresholds["min_hr"]:
             hr_status = "CRITICAL"
-            hr_reason = f"Severe bradycardia detected ({hr} BPM < {thresholds['min_hr']} BPM)."
+            hr_reason = f"Severe bradycardia detected ({hr:.0f} BPM < {thresholds['min_hr']} BPM)."
             hr_action = "STOP all activity immediately. Sit comfortably, notify caregiver Anita and seek emergency medical evaluation."
+            trigger_parameter = "hr"
             notifications.append({
                 "parameter": "Heart Rate",
-                "value": f"{hr} BPM",
+                "value": f"{hr:.0f} BPM",
                 "category": "RED",
                 "reason": hr_reason,
                 "safety_action": hr_action,
@@ -145,11 +150,12 @@ class ExerciseRecommendationEngine:
             })
         elif hr < 55:
             hr_status = "WARNING"
-            hr_reason = f"Borderline low heart rate ({hr} BPM)."
-            hr_action = "Pause exercise. Assess patient for dizziness, lightheadedness, or medication side effects."
+            hr_reason = f"Borderline low heart rate ({hr:.0f} BPM)."
+            hr_action = "Auto-assigning calf muscle pump routine to boost venous return."
+            trigger_parameter = "hr_low"
             notifications.append({
                 "parameter": "Heart Rate",
-                "value": f"{hr} BPM",
+                "value": f"{hr:.0f} BPM",
                 "category": "YELLOW",
                 "reason": hr_reason,
                 "safety_action": hr_action,
@@ -157,11 +163,12 @@ class ExerciseRecommendationEngine:
             })
         elif hr > thresholds["max_hr_exercise"]:
             hr_status = "CRITICAL"
-            hr_reason = f"Severe tachycardia detected ({hr} BPM > {thresholds['max_hr_exercise']} BPM ceiling)."
+            hr_reason = f"Severe tachycardia detected ({hr:.0f} BPM > {thresholds['max_hr_exercise']} BPM ceiling)."
             hr_action = "STOP rehabilitation immediately. Remain seated, breathe slowly, and alert medical personnel."
+            trigger_parameter = "hr"
             notifications.append({
                 "parameter": "Heart Rate",
-                "value": f"{hr} BPM",
+                "value": f"{hr:.0f} BPM",
                 "category": "RED",
                 "reason": hr_reason,
                 "safety_action": hr_action,
@@ -169,11 +176,12 @@ class ExerciseRecommendationEngine:
             })
         elif hr > thresholds["max_hr_resting"]:
             hr_status = "WARNING"
-            hr_reason = f"Elevated resting heart rate ({hr} BPM > {thresholds['max_hr_resting']} BPM)."
-            hr_action = "Pause exercise session. Hydrate, rest seated for 5 minutes, and verify before proceeding."
+            hr_reason = f"Elevated resting heart rate ({hr:.0f} BPM > {thresholds['max_hr_resting']} BPM)."
+            hr_action = "Auto-assigning low-cardiac seated protocol. Pause standing transfers."
+            trigger_parameter = "hr_high"
             notifications.append({
                 "parameter": "Heart Rate",
-                "value": f"{hr} BPM",
+                "value": f"{hr:.0f} BPM",
                 "category": "YELLOW",
                 "reason": hr_reason,
                 "safety_action": hr_action,
@@ -182,7 +190,7 @@ class ExerciseRecommendationEngine:
         else:
             notifications.append({
                 "parameter": "Heart Rate",
-                "value": f"{hr} BPM",
+                "value": f"{hr:.0f} BPM",
                 "category": "GREEN",
                 "reason": hr_reason,
                 "safety_action": hr_action,
@@ -206,6 +214,7 @@ class ExerciseRecommendationEngine:
             temp_status = "CRITICAL"
             temp_reason = f"Hypothermia alert: Body temperature {temp:.1f}°C is dangerously low (< {thresholds['min_temp']}°C)."
             temp_action = "STOP exercise immediately. Wrap in warm blankets, provide warm fluids, and seek urgent clinical assessment."
+            trigger_parameter = "temp"
             notifications.append({
                 "parameter": "Body Temperature",
                 "value": f"{temp:.1f} °C",
@@ -218,6 +227,7 @@ class ExerciseRecommendationEngine:
             temp_status = "CRITICAL"
             temp_reason = f"Fever detected ({temp:.1f}°C >= {thresholds['fever_temp']}°C). Strenuous exercise is clinically contraindicated."
             temp_action = "Postpone all rehabilitation exercises. Rest in bed, hydrate, monitor symptoms, and consult doctor."
+            trigger_parameter = "temp"
             notifications.append({
                 "parameter": "Body Temperature",
                 "value": f"{temp:.1f} °C",
@@ -229,7 +239,9 @@ class ExerciseRecommendationEngine:
         elif temp >= thresholds["warning_temp"]:
             temp_status = "WARNING"
             temp_reason = f"Low-grade temperature elevation ({temp:.1f}°C)."
-            temp_action = "Postpone high-exertion exercises. Reassess temperature in 15 minutes before starting."
+            temp_action = "Auto-assigning minimal exertion seated protocol to avoid thermal elevation."
+            if trigger_parameter == "optimal":
+                trigger_parameter = "temp"
             notifications.append({
                 "parameter": "Body Temperature",
                 "value": f"{temp:.1f} °C",
@@ -242,6 +254,8 @@ class ExerciseRecommendationEngine:
             temp_status = "WARNING"
             temp_reason = f"Sub-normal core temperature ({temp:.1f}°C)."
             temp_action = "Ensure warm ambient room temperature before proceeding with gentle exercises."
+            if trigger_parameter == "optimal":
+                trigger_parameter = "temp"
             notifications.append({
                 "parameter": "Body Temperature",
                 "value": f"{temp:.1f} °C",
@@ -277,6 +291,7 @@ class ExerciseRecommendationEngine:
             spo2_status = "CRITICAL"
             spo2_reason = f"Critical hypoxemia: SpO2 is {spo2:.0f}% (< {thresholds['min_spo2_critical']}%), indicating severe desaturation."
             spo2_action = "STOP all physical activity immediately. Sit fully upright in Fowler's position, apply prescribed oxygen, and call emergency services."
+            trigger_parameter = "spo2"
             notifications.append({
                 "parameter": "SpO2 (Blood Oxygen)",
                 "value": f"{spo2:.0f}%",
@@ -288,7 +303,9 @@ class ExerciseRecommendationEngine:
         elif spo2 < thresholds["min_spo2_warning"]:
             spo2_status = "WARNING"
             spo2_reason = f"Mild oxygen desaturation detected ({spo2:.0f}% < {thresholds['min_spo2_warning']}%)."
-            spo2_action = "Pause exercise session. Rest seated, perform deep diaphragmatic breathing, and reassess SpO2 before continuing."
+            spo2_action = "Auto-assigning gentle thoracic expansion routine. Pause strenuous leg standing."
+            if trigger_parameter in ["optimal", "humidity"]:
+                trigger_parameter = "spo2"
             notifications.append({
                 "parameter": "SpO2 (Blood Oxygen)",
                 "value": f"{spo2:.0f}%",
@@ -324,6 +341,8 @@ class ExerciseRecommendationEngine:
             humidity_status = "WARNING"
             humidity_reason = f"Dry ambient air detected ({humidity:.1f}% < 30%). May irritate respiratory mucous membranes."
             humidity_action = "Low humidity advisory: Ensure adequate water hydration before and during exercise."
+            if trigger_parameter == "optimal":
+                trigger_parameter = "humidity"
             notifications.append({
                 "parameter": "Environmental Humidity",
                 "value": f"{humidity:.1f}%",
@@ -335,7 +354,9 @@ class ExerciseRecommendationEngine:
         elif humidity > 70.0:
             humidity_status = "WARNING"
             humidity_reason = f"High humidity thermal burden ({humidity:.1f}% > 70%). Severely hinders evaporative sweat cooling."
-            humidity_action = "Advisory: Recommend room ventilation or cooling prior to exercise. Take extended rest breaks."
+            humidity_action = "Advisory: Recommend room ventilation or cooling. Auto-assigning extended 60s rest intervals."
+            if trigger_parameter == "optimal":
+                trigger_parameter = "humidity"
             notifications.append({
                 "parameter": "Environmental Humidity",
                 "value": f"{humidity:.1f}%",
@@ -374,7 +395,7 @@ class ExerciseRecommendationEngine:
             "action": humidity_action
         }
 
-        # Vital parameters (HR, Temp, SpO2) govern overall safety
+        # Overall category
         vital_categories = [
             statuses["hr"]["status"],
             statuses["temp"]["status"],
@@ -390,6 +411,7 @@ class ExerciseRecommendationEngine:
 
         return {
             "overall_category": overall_category,
+            "trigger_parameter": trigger_parameter,
             "statuses": statuses,
             "notifications": notifications,
             "evaluated_at": now_iso
@@ -432,12 +454,14 @@ class ExerciseRecommendationEngine:
         )
 
         overall_cat = vital_eval["overall_category"]
+        trigger_param = vital_eval["trigger_parameter"]
         notifications = vital_eval["notifications"]
         reasons: List[str] = []
 
         if has_pain or has_dizziness:
             if has_dizziness:
                 overall_cat = "RED"
+                trigger_param = "dizziness"
                 reasons.append("Dizziness reported; fall prevention requires full seated rest.")
                 notifications.insert(0, {
                     "parameter": "Dizziness / Vertigo",
@@ -450,6 +474,7 @@ class ExerciseRecommendationEngine:
             elif has_pain:
                 if overall_cat != "RED":
                     overall_cat = "YELLOW"
+                trigger_param = "pain"
                 reasons.append("Active pain reported by patient.")
                 notifications.insert(0, {
                     "parameter": "Joint / Muscular Pain",
@@ -472,55 +497,121 @@ class ExerciseRecommendationEngine:
 
         conditions_str = person.get("conditions", "").lower()
 
-        # Decision Logic:
-        # RED: Critical readings or concerning symptoms -> Stop rehabilitation, display urgent medical instructions.
-        # YELLOW: Abnormal readings -> Pause exercise, reassess and display a warning.
-        # GREEN: Parameters within prescribed limits -> Display assigned exercise.
+        # =========================================================================
+        # AUTOMATED PARAMETER-TO-EXERCISE ASSIGNMENT MATRIX
+        # =========================================================================
+        prescribed_exercises: List[Dict[str, Any]] = []
+
+        # 1. CRITICAL RED OVERRIDE: Stop rehabilitation, zero exercises!
         if overall_cat == "RED" or temp >= 38.0 or (hr_ok and hr > 115) or has_pain or has_dizziness or risk_band == "red":
             tier = "contraindicated_rest"
-            tier_name = "Restorative Rest & Recovery Only (Medical Stop)"
+            tier_name = "Rehabilitation Contraindicated - Medical Stop"
             can_exercise = False
             advice = (
                 "CRITICAL MEDICAL ALERT: Vital parameters have exceeded clinical safety thresholds. "
                 "All rehabilitation exercises are strictly halted. Do not attempt exercise. "
                 "Sit comfortably, rest calmly, and seek immediate clinical care."
             )
-            # Empty list: Do not prescribe exercise as treatment for abnormal vitals!
             prescribed_exercises = []
 
+        # 2. PARAMETER-SPECIFIC YELLOW AUTO-ASSIGNMENTS
         elif overall_cat == "YELLOW" or hr > 88 or idle_s > 1800 or risk_band == "amber":
             tier = "gentle_restorative"
-            tier_name = "Gentle Seated Mobilization (Caution Protocol)"
             can_exercise = False if overall_cat == "YELLOW" else True
-            if hr > 88:
-                reasons.append(f"Resting heart rate is slightly elevated ({hr:.0f} BPM). Prescribing low cardiac-workload seated routines.")
-            if idle_s > 1800:
-                reasons.append(f"Patient has been immobile for {idle_s // 60} mins. Gentle activation needed to prevent stiffness.")
-            if "osteoarthritis" in conditions_str or "knee" in conditions_str:
-                reasons.append("Patient has knee osteoarthritis: Avoiding deep knee flexion under bodyweight.")
 
-            ex1 = dict(FOUR_CANONICAL_EXERCISES["seated_knee_extension"])
-            ex1["target_sets"] = 2
-            ex1["target_reps"] = 8
-            ex1["rest_s"] = 45
-            ex4 = dict(FOUR_CANONICAL_EXERCISES["shoulder_raise"])
-            ex4["target_sets"] = 2
-            ex4["target_reps"] = 8
-            ex4["rest_s"] = 35
+            # Case A: Elevated Heart Rate (Yellow) -> Auto-assign Low-Cardiac Seated Protocol
+            if trigger_param in ["hr", "hr_high"] or hr > 88:
+                tier_name = "Auto-Assigned: Low-Cardiac Seated Protocol"
+                reasons.append(f"Heart rate elevated ({hr:.0f} BPM). Auto-assigned seated routine to eliminate cardiac workload.")
+                ex1 = dict(FOUR_CANONICAL_EXERCISES["seated_knee_extension"])
+                ex1["default_sets"] = 2
+                ex1["default_reps"] = 8
+                ex1["rest_s"] = 45
+                ex1["why_selected"] = f"Auto-assigned due to elevated heart rate ({hr:.0f} BPM): Maintains quadriceps activation while seated, avoiding cardiovascular spikes."
 
-            prescribed_exercises = [ex1, ex4]
-            advice = (
-                "SAFETY CAUTION: Minor parameter elevation or prolonged stillness detected. "
-                "Only low-cardiac seated movements are permitted after vital reassessment."
-            )
+                ex4 = dict(FOUR_CANONICAL_EXERCISES["shoulder_raise"])
+                ex4["default_sets"] = 2
+                ex4["default_reps"] = 8
+                ex4["rest_s"] = 40
+                ex4["why_selected"] = "Auto-assigned seated arm elevation with low hemodynamic resistance."
 
+                prescribed_exercises = [ex1, ex4]
+                advice = f"⚡ Autonomous Adaptation: Heart rate is in YELLOW category ({hr:.0f} BPM). Auto-assigned Low-Cardiac Seated Protocol (Seated Knee Extensions & Shoulder Raises) with 45s rest intervals."
+
+            # Case B: Borderline Low Heart Rate (Yellow) -> Auto-assign Venous Calf Pump Protocol
+            elif trigger_param == "hr_low" or (hr < 55 and hr >= 50):
+                tier_name = "Auto-Assigned: Venous Return & Calf Pump Protocol"
+                reasons.append(f"Heart rate borderline low ({hr:.0f} BPM). Auto-assigned calf muscle pump to stimulate venous return.")
+                ex3 = dict(FOUR_CANONICAL_EXERCISES["standing_heel_raise"])
+                ex3["default_sets"] = 2
+                ex3["default_reps"] = 8
+                ex3["rest_s"] = 35
+                ex3["why_selected"] = f"Auto-assigned due to low heart rate ({hr:.0f} BPM): Calf contractions compress deep veins to enhance cardiac venous return."
+
+                ex1 = dict(FOUR_CANONICAL_EXERCISES["seated_knee_extension"])
+                ex1["default_sets"] = 2
+                ex1["default_reps"] = 8
+                ex1["rest_s"] = 30
+                ex1["why_selected"] = "Seated knee extensions performed with light cadence."
+
+                prescribed_exercises = [ex3, ex1]
+                advice = f"⚡ Autonomous Adaptation: Heart rate is borderline low ({hr:.0f} BPM). Auto-assigned Venous Calf Pump Protocol to stimulate venous circulation."
+
+            # Case C: SpO2 Mild Desaturation (Yellow) -> Auto-assign Thoracic Expansion Protocol
+            elif trigger_param == "spo2" or (spo2 < 95 and spo2 >= 90):
+                tier_name = "Auto-Assigned: Thoracic Respiratory Expansion Protocol"
+                reasons.append(f"SpO2 mild desaturation ({spo2:.0f}%). Auto-assigned gentle thoracic expansion.")
+                ex4 = dict(FOUR_CANONICAL_EXERCISES["shoulder_raise"])
+                ex4["default_sets"] = 2
+                ex4["default_reps"] = 8
+                ex4["rest_s"] = 45
+                ex4["why_selected"] = f"Auto-assigned due to SpO2 desaturation ({spo2:.0f}%): Coordinated arm elevation expands ribcage and improves alveolar oxygen exchange."
+
+                ex1 = dict(FOUR_CANONICAL_EXERCISES["seated_knee_extension"])
+                ex1["default_sets"] = 1
+                ex1["default_reps"] = 8
+                ex1["rest_s"] = 45
+                ex1["why_selected"] = "Low metabolic demand seated movement to prevent creating an oxygen debt."
+
+                prescribed_exercises = [ex4, ex1]
+                advice = f"⚡ Autonomous Adaptation: Blood oxygen in YELLOW category (SpO2 {spo2:.0f}%). Auto-assigned Thoracic Respiratory Expansion Protocol with deep diaphragmatic breathing."
+
+            # Case D: Body Temp Low-Grade Elevation (Yellow) -> Minimal Exertion Protocol
+            elif trigger_param == "temp" or (temp >= 37.6 and temp < 38.0):
+                tier_name = "Auto-Assigned: Minimal Metabolic Burden Protocol"
+                reasons.append(f"Temperature low-grade elevated ({temp:.1f} °C). Auto-assigned minimal exertion.")
+                ex1 = dict(FOUR_CANONICAL_EXERCISES["seated_knee_extension"])
+                ex1["default_sets"] = 1
+                ex1["default_reps"] = 8
+                ex1["rest_s"] = 60
+                ex1["why_selected"] = f"Auto-assigned due to temperature ({temp:.1f} °C): Minimal joint mobility preserving range without generating metabolic heat."
+
+                prescribed_exercises = [ex1]
+                advice = f"⚡ Autonomous Adaptation: Body temperature in YELLOW category ({temp:.1f} °C). Auto-assigned Minimal Metabolic Protocol with extended 60s rest."
+
+            # Case E: High Humidity (Yellow) -> Extended Rest Protocol
+            else:
+                tier_name = "Auto-Assigned: Extended Rest Low-Thermal Burden Protocol"
+                reasons.append(f"Environmental humidity high ({humidity:.1f}%). Auto-assigned extended recovery intervals.")
+                ex1 = dict(FOUR_CANONICAL_EXERCISES["seated_knee_extension"])
+                ex1["default_sets"] = 2
+                ex1["default_reps"] = 8
+                ex1["rest_s"] = 60
+                ex4 = dict(FOUR_CANONICAL_EXERCISES["shoulder_raise"])
+                ex4["default_sets"] = 2
+                ex4["default_reps"] = 8
+                ex4["rest_s"] = 45
+
+                prescribed_exercises = [ex1, ex4]
+                advice = f"⚡ Autonomous Adaptation: Ambient humidity is high ({humidity:.1f}%). Auto-assigned Extended Rest Routine to prevent heat accumulation."
+
+        # 3. OPTIMAL GREEN STATE -> Auto-assigns Full Functional Active Protocol
         else:
-            # GREEN: Optimal Physiological State
             tier = "standard_active"
-            tier_name = "Active Functional Rehabilitation"
+            tier_name = "Auto-Assigned: Active Functional Rehabilitation"
             can_exercise = True
-            reasons.append(f"Resting vitals are optimal (Heart rate {hr:.0f} BPM, Temperature {temp:.1f} °C, SpO2 {spo2:.0f}%).")
-            reasons.append("Patient is afebrile with zero reported pain.")
+            reasons.append(f"Vitals optimal (HR {hr:.0f} BPM, Temp {temp:.1f} °C, SpO2 {spo2:.0f}%, Humidity {humidity:.1f}%).")
+            reasons.append("Patient afebrile with zero reported pain.")
 
             ex1 = dict(FOUR_CANONICAL_EXERCISES["seated_knee_extension"])
             ex2 = dict(FOUR_CANONICAL_EXERCISES["sit_to_stand"])
@@ -528,17 +619,13 @@ class ExerciseRecommendationEngine:
             ex4 = dict(FOUR_CANONICAL_EXERCISES["shoulder_raise"])
 
             if "osteoarthritis" in conditions_str or "knee" in conditions_str:
-                ex1["why_selected"] = "Selected as primary exercise: Strengthens quadriceps to offload patellofemoral stress from Ramesh's mild knee osteoarthritis."
-                ex2["why_selected"] = "Selected for functional mobility: Performed with controlled knee alignment to maintain chair rise capability without knee valgus."
-                ex3["why_selected"] = "Selected for ankle stability: Enhances proprioceptive balance and lower leg venous return."
-                ex4["why_selected"] = "Selected for postural balance: Gentle arm elevation maintaining thoracic mobility without spinal flexion."
+                ex1["why_selected"] = "Selected for knee osteoarthritis: Peri-articular quadriceps strengthening offloading patellar stress."
+                ex2["why_selected"] = "Selected for functional mobility: Controlled chair transfers reinforcing independent rising and CDC STEADI fall prevention."
+                ex3["why_selected"] = "Selected for calf venous pump: Activates gastrocnemius muscle pump and enhances ankle stability."
+                ex4["why_selected"] = "Selected for postural control: Thoracic chest expansion without spinal flexion."
 
             prescribed_exercises = [ex1, ex2, ex3, ex4]
-            advice = (
-                "Vital signs are optimal and verified within personal baseline bounds. "
-                "You are cleared to perform your physiotherapist-prescribed routine. "
-                "Maintain smooth cadence, breathe steadily, and follow posture guidance."
-            )
+            advice = "⚡ Autonomous Adaptation: All vital parameters in GREEN category. Auto-assigned Full Functional Active Rehabilitation Protocol (all 4 canonical exercises cleared)."
 
         summary_sentence = " ".join(reasons) if reasons else advice
 
@@ -546,6 +633,7 @@ class ExerciseRecommendationEngine:
             "tier": tier,
             "tier_name": tier_name,
             "overall_category": overall_cat,
+            "trigger_parameter": trigger_param,
             "can_exercise": can_exercise,
             "is_simulated": is_simulated,
             "clinical_reasoning": reasons,
