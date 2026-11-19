@@ -1,0 +1,184 @@
+{
+  "exercises": [
+    {
+      "id": "seated_knee_extension",
+      "name": "Seated Knee Extension",
+      "tamil_name": "நாற்காலியில் அமர்ந்து முழங்கால் நீட்டுதல்",
+      "category": "Lower Body",
+      "target_muscle": "Quadriceps",
+      "primary_joint": "knee",
+      "tracking_side": "either",
+      "key_landmarks": {
+        "hip": 23,
+        "knee": 25,
+        "ankle": 27
+      },
+      "start_angle": 90,
+      "target_angle": 170,
+      "angle_tolerance": 12,
+      "min_rep_duration_s": 2.0,
+      "max_rep_duration_s": 7.0,
+      "default_sets": 2,
+      "default_reps": 10,
+      "rest_between_sets_s": 30,
+      "instructions_en": "Sit upright with feet flat. Slowly straighten one leg until nearly horizontal, hold for 1 second, and gently lower.",
+      "instructions_ta": "நேராக அமர்ந்து, ஒரு காலை மெதுவாக நேராக நீட்டி 1 வினாடி நிறுத்தி, பின் கீழே இறக்கவும்.",
+      "common_faults": [
+        {
+          "id": "incomplete_extension",
+          "name": "Incomplete Extension",
+          "name_ta": "முழுமையாக நீட்டவில்லை",
+          "threshold_angle": 150,
+          "guidance_en": "Straighten the knee more to reach full extension.",
+          "guidance_ta": "முழங்காலை இன்னும் நேராக நீட்டவும்."
+        },
+        {
+          "id": "too_fast",
+          "name": "Rushing / Fast Jerk",
+          "name_ta": "மிக வேகமாக செய்தல்",
+          "guidance_en": "Move slower with control on the way down.",
+          "guidance_ta": "காலை மெதுவாக கட்டுப்பாட்டுடன் இறக்கவும்."
+        },
+        {
+          "id": "torso_lean_back",
+          "name": "Excessive Trunk Lean",
+          "name_ta": "உடலை பின்னால் சாய்த்தல்",
+          "guidance_en": "Keep your back upright without leaning back.",
+          "guidance_ta": "முதுகை பின்னால் சாய்க்காமல் நேராக வைக்கவும்."
+        }
+      ]
+    },
+    {
+      "id": "sit_to_stand",
+      "name": "Sit to Stand (Chair Stand)",
+      "tamil_name": "நாற்காலியிலிருந்து எழுந்து அமருதல்",
+      "category": "Functional Mobility",
+      "target_muscle": "Gluteals, Quadriceps, Core",
+      "primary_joint": "hip_knee",
+      "tracking_side": "either",
+      "key_landmarks": {
+        "shoulder": 11,
+        "hip": 23,
+        "knee": 25,
+        "ankle": 27
+      },
+      "start_angle": 90,
+      "target_angle": 170,
+      "angle_tolerance": 15,
+      "min_rep_duration_s": 2.2,
+      "max_rep_duration_s": 8.0,
+      "default_sets": 2,
+      "default_reps": 8,
+      "rest_between_sets_s": 45,
+      "instructions_en": "Sit on a sturdy chair. Stand up fully without pushing with hands if possible, then sit back down gently.",
+      "instructions_ta": "நாற்காலியில் அமர்ந்து, கைகளின் துணையின்றி நேராக எழுந்து நின்று, பின் மெதுவாக அமரவும்.",
+      "common_faults": [
+        {
+          "id": "knee_valgus",
+          "name": "Knees Caving In",
+          "name_ta": "முழங்கால்கள் உள்நோக்கி வளைதல்",
+          "guidance_en": "Keep knees aligned with toes; do not let them cave in.",
+          "guidance_ta": "முழங்கால்களை நேராக வைக்கவும், உள்நோக்கி சாய்க்க வேண்டாம்."
+        },
+        {
+          "id": "incomplete_stand",
+          "name": "Incomplete Standing Height",
+          "name_ta": "முழுமையாக எழுந்து நிற்கவில்லை",
+          "threshold_angle": 155,
+          "guidance_en": "Stand tall and fully extend your hips.",
+          "guidance_ta": "முழுமையாக நிமிர்ந்து நிற்கவும்."
+        },
+        {
+          "id": "heavy_plop",
+          "name": "Dropping Into Chair",
+          "name_ta": "திடீரென நாற்காலியில் விழுதல்",
+          "guidance_en": "Lower yourself gently using leg strength.",
+          "guidance_ta": "கால்களின் பலத்தால் மெதுவாக அமரவும்."
+        }
+      ]
+    },
+    {
+      "id": "standing_heel_raise",
+      "name": "Standing Heel Raise",
+      "tamil_name": "குதிங்கால் உயர்த்துதல்",
+      "category": "Balance & Calves",
+      "target_muscle": "Gastrocnemius, Soleus",
+      "primary_joint": "ankle",
+      "tracking_side": "either",
+      "key_landmarks": {
+        "knee": 25,
+        "ankle": 27,
+        "foot": 31
+      },
+      "start_angle": 90,
+      "target_angle": 125,
+      "angle_tolerance": 10,
+      "min_rep_duration_s": 1.8,
+      "max_rep_duration_s": 6.0,
+      "default_sets": 2,
+      "default_reps": 12,
+      "rest_between_sets_s": 30,
+      "instructions_en": "Hold onto a wall or chair for balance. Rise up onto balls of feet, hold briefly, then lower heels down.",
+      "instructions_ta": "சுவர் அல்லது நாற்காலியைப் பிடித்துக்கொண்டு, குதிகால்களை உயர்த்தி கால் விரல்களில் நிற்கவும்.",
+      "common_faults": [
+        {
+          "id": "partial_lift",
+          "name": "Low Heel Height",
+          "name_ta": "குறைவான உயரம்",
+          "threshold_angle": 110,
+          "guidance_en": "Push up higher through your big toes.",
+          "guidance_ta": "குதிங்கால்களை இன்னும் மேலே உயர்த்தவும்."
+        },
+        {
+          "id": "bouncing",
+          "name": "Bouncing without Pause",
+          "name_ta": "நிறுத்தாமல் குதித்தல்",
+          "guidance_en": "Hold at the top for one second without bouncing.",
+          "guidance_ta": "மேலே ஒரு வினாடி நிதானமாக நிற்கவும்."
+        }
+      ]
+    },
+    {
+      "id": "shoulder_raise",
+      "name": "Shoulder Front Raise",
+      "tamil_name": "தோள்பட்டை முன்பக்க உயர்த்துதல்",
+      "category": "Upper Body",
+      "target_muscle": "Anterior Deltoid, Rotator Cuff",
+      "primary_joint": "shoulder",
+      "tracking_side": "either",
+      "key_landmarks": {
+        "hip": 23,
+        "shoulder": 11,
+        "elbow": 13,
+        "wrist": 15
+      },
+      "start_angle": 20,
+      "target_angle": 90,
+      "angle_tolerance": 15,
+      "min_rep_duration_s": 2.0,
+      "max_rep_duration_s": 6.0,
+      "default_sets": 2,
+      "default_reps": 10,
+      "rest_between_sets_s": 30,
+      "instructions_en": "Raise arms forward smoothly to shoulder level with elbows straight, hold, and gently lower.",
+      "instructions_ta": "கைகளை தோள்பட்டை உயரத்திற்கு நேராக உயர்த்தி, ஒரு வினாடி நிறுத்தி, மெதுவாக இறக்கவும்.",
+      "common_faults": [
+        {
+          "id": "over_elevation",
+          "name": "Over-Elevation",
+          "name_ta": "தோளுக்கு மேல் உயர்த்துதல்",
+          "threshold_angle": 115,
+          "guidance_en": "Stop at shoulder height; do not raise above your ears.",
+          "guidance_ta": "தோள்பட்டை உயரத்திற்கு மேல் கையை உயர்த்த வேண்டாம்."
+        },
+        {
+          "id": "bent_elbow",
+          "name": "Bent Elbow",
+          "name_ta": "முழங்கை வளைதல்",
+          "guidance_en": "Keep the elbow reasonably straight throughout the raise.",
+          "guidance_ta": "முழங்கையை நேராக வைக்கவும்."
+        }
+      ]
+    }
+  ]
+}

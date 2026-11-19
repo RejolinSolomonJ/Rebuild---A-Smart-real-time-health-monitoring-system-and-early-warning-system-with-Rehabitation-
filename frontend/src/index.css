@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#0b0f0c] text-slate-100 antialiased selection:bg-lime-500 selection:text-black;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+}
+
+/* Custom pulse animations */
+@keyframes heart-pulse {
+  0% { transform: scale(1); }
+  15% { transform: scale(1.15); }
+  30% { transform: scale(1); }
+  45% { transform: scale(1.08); }
+  60% { transform: scale(1); }
+}
+
+.animate-heart {
+  animation: heart-pulse 1.2s infinite ease-in-out;
+}
+
+@keyframes flash-urgent {
+  0%, 100% { background-color: #ef4444; }
+  50% { background-color: #7f1d1d; }
+}
+
+.animate-urgent-banner {
+  animation: flash-urgent 0.8s infinite ease-in-out;
+}
+
+/* Kinora Neon Glows */
+.shadow-neon {
+  box-shadow: 0 0 25px rgba(132, 204, 22, 0.25);
+}
+
+.shadow-neon-sm {
+  box-shadow: 0 0 12px rgba(132, 204, 22, 0.35);
+}
+
+.shadow-neon-lg {
+  box-shadow: 0 0 45px rgba(132, 204, 22, 0.3);
+}
+
+/* Custom Slim Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f1411;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1f2a22;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #36483b;
+}
