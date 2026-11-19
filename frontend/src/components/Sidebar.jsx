@@ -54,7 +54,7 @@ export default function Sidebar({
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="font-extrabold text-base tracking-widest text-white uppercase">KINORA</span>
+              <span className="font-extrabold text-base tracking-widest text-white uppercase">ReBuild4</span>
               <span className="text-[9px] font-mono font-bold bg-[#84cc16]/20 text-[#a3e635] px-1.5 py-0.5 rounded border border-[#84cc16]/30">
                 PRO
               </span>

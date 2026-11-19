@@ -15,6 +15,14 @@ import HardwareModal from "./components/HardwareModal";
 import Sidebar from "./components/Sidebar";
 import TopHeader from "./components/TopHeader";
 import RealTimeDataView from "./views/RealTimeDataView";
+import AIAssistantView from "./views/AIAssistantView";
+import ActivityView from "./views/ActivityView";
+import WorkoutsView from "./views/WorkoutsView";
+import VitalsHealthView from "./views/VitalsHealthView";
+import SleepRestView from "./views/SleepRestView";
+import SentinelNodeView from "./views/SentinelNodeView";
+import ProgressView from "./views/ProgressView";
+import SettingsView from "./views/SettingsView";
 
 export default function App() {
   const [currentRole, setCurrentRole] = useState("patient");
@@ -316,49 +324,85 @@ export default function App() {
             onReportOk={handleReportOk}
             lang={lang}
           />
+        ) : activeTab === "ai_assistant" ? (
+          <AIAssistantView
+            person={person}
+            latestReading={latestReading}
+            plan={plan}
+            lang={lang}
+          />
+        ) : activeTab === "activity" ? (
+          <ActivityView
+            latestReading={latestReading}
+            lang={lang}
+          />
+        ) : activeTab === "workouts" ? (
+          <WorkoutsView
+            plan={plan}
+            onStartSession={() => setActiveSession(true)}
+            latestReading={latestReading}
+            lang={lang}
+          />
+        ) : activeTab === "nutrition" ? (
+          <VitalsHealthView
+            latestReading={latestReading}
+            lang={lang}
+          />
+        ) : activeTab === "sleep" ? (
+          <SleepRestView
+            lang={lang}
+          />
+        ) : activeTab === "health" ? (
+          <SentinelNodeView
+            latestReading={latestReading}
+            onOpenHardware={() => setShowHardware(true)}
+            lang={lang}
+          />
+        ) : activeTab === "progress" ? (
+          <ProgressView
+            person={person}
+            onOpenReport={() => setShowReport(true)}
+            onOpenScreening={() => setShowScreening(true)}
+            lang={lang}
+          />
+        ) : activeTab === "caregivers" ? (
+          <CaregiverView
+            person={person}
+            latestReading={latestReading}
+            alerts={alerts}
+            onAckAlert={handleAckAlert}
+            lang={lang}
+          />
+        ) : activeTab === "physio" ? (
+          <PhysioView
+            plan={plan}
+            onSavePlan={handleSavePlan}
+            lang={lang}
+          />
+        ) : activeTab === "settings" ? (
+          <SettingsView
+            person={person}
+            lang={lang}
+            onLangToggle={() => setLang((prev) => (prev === "en" ? "ta" : "en"))}
+            onOpenHardware={() => setShowHardware(true)}
+          />
         ) : (
-          <>
-            {currentRole === "patient" && (
-              <PatientView
-                person={person}
-                latestReading={latestReading}
-                readingHistory={readingHistory}
-                plan={plan}
-                alerts={alerts}
-                onStartSession={() => setActiveSession(true)}
-                onReportOk={handleReportOk}
-                onTriggerPrompt={handleTriggerPrompt}
-                onRefreshPlan={fetchPlan}
-                onOpenTelemetry={() => {
-                  setActiveTab("telemetry");
-                  setActiveSession(false);
-                }}
-                lang={lang}
-              />
-            )}
-
-            {currentRole === "caregiver" && (
-              <CaregiverView
-                person={person}
-                latestReading={latestReading}
-                alerts={alerts}
-                onAckAlert={handleAckAlert}
-                lang={lang}
-              />
-            )}
-
-            {currentRole === "physio" && (
-              <PhysioView
-                plan={plan}
-                onSavePlan={handleSavePlan}
-                lang={lang}
-              />
-            )}
-
-            {currentRole === "health_worker" && (
-              <HealthWorkerView lang={lang} />
-            )}
-          </>
+          <PatientView
+            person={person}
+            latestReading={latestReading}
+            readingHistory={readingHistory}
+            plan={plan}
+            alerts={alerts}
+            onStartSession={() => setActiveSession(true)}
+            onReportOk={handleReportOk}
+            onTriggerPrompt={handleTriggerPrompt}
+            onRefreshPlan={fetchPlan}
+            onOpenTelemetry={() => {
+              setActiveTab("telemetry");
+              setActiveSession(false);
+            }}
+            lang={lang}
+          />
         )}
       </main>
 
@@ -394,7 +438,7 @@ export default function App() {
 
         {/* Footer */}
         <footer className="py-4 text-center text-xs text-[#4b5563] border-t border-[#18201a]">
-          Kinora ReBuild Unified Platform • Team Preva
+          ReBuild4 Unified Platform • Team Preva
         </footer>
       </div>
     </div>

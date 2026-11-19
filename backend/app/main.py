@@ -57,8 +57,6 @@ except ImportError:
     from backend.engine.anomaly import SecondaryAnomalyDetector
     from backend.rehab.scoring import RecoveryScoreCalculator
     from backend.engine.recommender import ExerciseRecommendationEngine
-
-# Initialize DB tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
