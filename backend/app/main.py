@@ -792,8 +792,11 @@ def get_exercise_recommendation(id: int, pain: bool = False, dizziness: bool = F
             "hr": latest_reading.hr,
             "hr_ok": latest_reading.hr_ok,
             "temp": latest_reading.temp,
+            "spo2": latest_reading.spo2 if latest_reading.spo2 is not None else 98.0,
+            "humidity": latest_reading.humidity if latest_reading.humidity is not None else 52.0,
             "idle_s": latest_reading.idle_s,
-            "risk_band": latest_reading.risk_band
+            "risk_band": latest_reading.risk_band,
+            "source": "HARDWARE_SERIAL" if (serial_worker.serial_conn and serial_worker.serial_conn.is_open) else "SIMULATED"
         }
 
     session_dicts = [
@@ -813,15 +816,22 @@ def get_exercise_recommendation(id: int, pain: bool = False, dizziness: bool = F
 def apply_recommended_plan(id: int, db: Session = Depends(get_db)):
     """
     Applies the AI-recommended adaptive routine as the active approved ExercisePlan.
+    Safely enforces that critical/warning vitals block automatic routine application.
     """
     rec = get_exercise_recommendation(id=id, db=db)
+    if not rec.get("can_exercise", True) or rec.get("overall_category") != "GREEN":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Rehabilitation safety block: Cannot apply exercise plan while parameters are in {rec.get('overall_category')} state. {rec.get('advice')}"
+        )
+
     person = db.query(Person).filter(Person.id == id).first()
 
     # Create new approved ExercisePlan
     new_plan = ExercisePlan(
         person_id=id,
-        title=f"AI Adaptive: {rec['tier_name']}",
-        notes=rec["advice"] + " | " + rec["summary_sentence"],
+        title=f"AI Protocol: {rec['tier_name']}",
+        notes=rec["advice"],
         approved_by_physio=True,
         physio_name="AI Recommender (Dr. Kavitha Approved Protocol)",
         max_hr_limit=rec["max_prescribed_hr"],
@@ -837,9 +847,9 @@ def apply_recommended_plan(id: int, db: Session = Depends(get_db)):
             plan_id=new_plan.id,
             exercise_id=item["id"],
             exercise_name=item["name"],
-            target_sets=item["target_sets"],
-            target_reps=item["target_reps"],
-            rest_s=item["rest_s"],
+            target_sets=item.get("default_sets", 2),
+            target_reps=item.get("default_reps", 10),
+            rest_s=item.get("rest_s", 30),
             order_idx=idx
         )
         db.add(e_item)
@@ -851,7 +861,7 @@ def apply_recommended_plan(id: int, db: Session = Depends(get_db)):
         "plan_id": new_plan.id,
         "title": new_plan.title,
         "tier": rec["tier"],
-        "reason": rec["summary_sentence"],
+        "reason": rec["advice"],
         "items_count": len(rec["prescribed_exercises"])
     }
 

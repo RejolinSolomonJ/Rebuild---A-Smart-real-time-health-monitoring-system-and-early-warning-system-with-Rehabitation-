@@ -36,25 +36,24 @@ export default function RecommendationCard({ person, latestReading, onPlanApplie
       })
       .catch((err) => {
         // Fallback to client-side heuristic recommendation if backend is offline
-        const hr = latestReading?.hr || 72;
+        const hr = latestReading?.hr || 74;
         const temp = Number(latestReading?.temp) || 36.6;
+        const spo2 = Number(latestReading?.spo2) || 98.0;
 
-        if (temp >= 38.0 || hr > 110) {
+        if (temp >= 38.0 || hr > 115 || hr < 50 || spo2 < 90) {
           setRecommendation({
             tier: "contraindicated_rest",
-            tier_name: "Restorative Rest & Recovery Only",
-            clinical_reasoning: ["Elevated vital readings detected; active rest recommended."],
-            prescribed_exercises: [
-              { id: "deep_breathing_mobility", name: "Diaphragmatic Breathing & Ankle Pumps", tamil_name: "ஆழ்ந்த மூச்சுப்பயிற்சி", target_sets: 1, target_reps: 10, rest_s: 30, intensity: "very_low" }
-            ],
+            tier_name: "Restorative Rest & Recovery Only (Medical Stop)",
+            clinical_reasoning: ["Critical vital readings detected; exercise is strictly contraindicated."],
+            prescribed_exercises: [],
             max_prescribed_hr: 95,
             max_prescribed_borg: 10
           });
-        } else if (hr > 85) {
+        } else if (hr > 88 || spo2 < 95) {
           setRecommendation({
             tier: "gentle_restorative",
-            tier_name: "Gentle Seated Mobilization",
-            clinical_reasoning: ["Resting heart rate slightly elevated; seated routine prescribed."],
+            tier_name: "Gentle Seated Mobilization (Caution Protocol)",
+            clinical_reasoning: ["Vital parameters require gentle pacing; seated quadriceps and shoulder mobility prescribed."],
             prescribed_exercises: [
               { id: "seated_knee_extension", name: "Seated Knee Extension", tamil_name: "நாற்காலியில் முழங்கால் நீட்டுதல்", target_sets: 2, target_reps: 8, rest_s: 45, intensity: "low" },
               { id: "shoulder_raise", name: "Shoulder Front Raise", tamil_name: "தோள்பட்டை முன்பக்க உயர்த்துதல்", target_sets: 2, target_reps: 8, rest_s: 35, intensity: "low" }

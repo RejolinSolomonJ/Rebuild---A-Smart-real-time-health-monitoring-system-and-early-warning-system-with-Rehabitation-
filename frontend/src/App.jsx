@@ -430,6 +430,7 @@ export default function App() {
               plan={plan}
               onStartSession={() => setActiveSession(true)}
               latestReading={latestReading}
+              readingHistory={readingHistory}
               lang={lang}
             />
           ) : activeTab === "nutrition" ? (

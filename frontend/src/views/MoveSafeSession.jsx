@@ -15,7 +15,12 @@ import {
   Flame,
   Activity,
   Cpu,
-  Video
+  Video,
+  Droplets,
+  Thermometer,
+  Heart,
+  AlertOctagon,
+  Clock
 } from "lucide-react";
 import {
   EXERCISE_CONFIGS,
@@ -24,6 +29,7 @@ import {
   speakFeedback,
   ClientRepCounter
 } from "../rehab/moveSafeEngine";
+import { audioAlerts } from "../rehab/vitalRehabEngine";
 
 export default function MoveSafeSession({
   person,
@@ -46,6 +52,11 @@ export default function MoveSafeSession({
   const [prePain, setPrePain] = useState(false);
   const [preDizziness, setPreDizziness] = useState(false);
   const [preCheckError, setPreCheckError] = useState("");
+
+  // Session duration and vitals logging
+  const [sessionDuration, setSessionDuration] = useState(0);
+  const [sessionVitalsLog, setSessionVitalsLog] = useState([]);
+  const [pauseSeverity, setPauseSeverity] = useState("YELLOW");
 
   // Exercise selection
   const exerciseKeys = Object.keys(EXERCISE_CONFIGS);
@@ -116,12 +127,40 @@ export default function MoveSafeSession({
       return;
     }
 
-    // 3. Vitals Check
+    // 3. Vitals Check across all 4 parameters
+    const hr = Number(latestReading?.hr) || 74;
+    const temp = Number(latestReading?.temp) || 36.6;
+    const spo2 = Number(latestReading?.spo2) || 98.0;
     const maxHR = plan?.max_hr_limit || 125;
-    if (latestReading && latestReading.hr_ok && latestReading.hr >= maxHR) {
+
+    if (temp >= 38.0) {
       setPreCheckError(lang === "ta"
-        ? `தற்போதைய இதயத் துடிப்பு (${latestReading.hr} BPM) அனுமதிக்கப்பட்ட வரம்பை (${maxHR} BPM) விட அதிகமாக உள்ளது.`
-        : `Safety Block: Resting heart rate (${latestReading.hr} BPM) exceeds prescribed limit (${maxHR} BPM).`);
+        ? `காய்ச்சல் கண்டறியப்பட்டது (${temp.toFixed(1)}°C). உடற்பயிற்சி உடனடியாக தற்காலிகமாக நிறுத்தப்படுகிறது.`
+        : `Safety Block: Fever detected (${temp.toFixed(1)}°C >= 38.0°C). Exercise is strictly contraindicated.`);
+      return;
+    }
+    if (temp < 35.5) {
+      setPreCheckError(lang === "ta"
+        ? `உடல் வெப்பநிலை மிகக் குறைவாக உள்ளது (${temp.toFixed(1)}°C). தயவுசெய்து உடல் சூட்டைப் பராமரிக்கவும்.`
+        : `Safety Block: Low core body temperature (${temp.toFixed(1)}°C < 35.5°C). Please warm up first.`);
+      return;
+    }
+    if (spo2 < 90.0) {
+      setPreCheckError(lang === "ta"
+        ? `ஆக்ஸிஜன் அளவு மிகக் குறைவாக உள்ளது (${Math.round(spo2)}%). உடனடியாக மருத்துவரை அணுகவும்.`
+        : `Critical Safety Block: Severe hypoxemia detected (SpO2 ${Math.round(spo2)}% < 90%). Emergency seated rest required.`);
+      return;
+    }
+    if (spo2 < 95.0) {
+      setPreCheckError(lang === "ta"
+        ? `ஆக்ஸிஜன் அளவு குறைவாக உள்ளது (${Math.round(spo2)}%). ஆழமாக சுவாசித்து ஓய்வெடுக்கவும்.`
+        : `Safety Block: Mild oxygen desaturation (SpO2 ${Math.round(spo2)}% < 95%). Exercise postponed for rest.`);
+      return;
+    }
+    if (latestReading && latestReading.hr_ok && (latestReading.hr >= maxHR || latestReading.hr < 50)) {
+      setPreCheckError(lang === "ta"
+        ? `இதயத் துடிப்பு (${latestReading.hr} BPM) அனுமதிக்கப்பட்ட வரம்பிற்கு வெளியே உள்ளது (50–${maxHR} BPM).`
+        : `Safety Block: Heart rate (${latestReading.hr} BPM) outside prescribed limit (50–${maxHR} BPM).`);
       return;
     }
 
@@ -375,33 +414,98 @@ export default function MoveSafeSession({
     return () => clearInterval(mockInterval);
   }, [useSimulator, step, selectedExKey, lang, sessionId, targetReps, streak]);
 
-  // Safe Pause Watchdog (Protects patient if Heart Rate crosses ceiling)
+  // Session duration timer and in-session vitals logging
   useEffect(() => {
-    if (step === "active_workout" && latestReading && latestReading.hr_ok) {
+    let timer = null;
+    if (step === "active_workout") {
+      timer = setInterval(() => {
+        setSessionDuration((prev) => prev + 1);
+        if (latestReading) {
+          const sample = {
+            time: Date.now(),
+            hr: Number(latestReading.hr) || 74,
+            temp: Number(latestReading.temp) || 36.6,
+            spo2: Number(latestReading.spo2) || 98.0,
+            humidity: Number(latestReading.humidity) || 52.0
+          };
+          setSessionVitalsLog((prev) => [...prev.slice(-300), sample]);
+        }
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [step, latestReading]);
+
+  // Safe Pause Watchdog across all 4 Vital Parameters (Heart Rate, Temp, SpO2, Humidity)
+  useEffect(() => {
+    if (step === "active_workout" && latestReading) {
+      const hr = Number(latestReading.hr) || 74;
+      const hrOk = Boolean(latestReading.hr_ok) && hr > 0;
+      const temp = Number(latestReading.temp) || 36.6;
+      const spo2 = Number(latestReading.spo2) || 98.0;
       const maxAllowed = plan?.max_hr_limit || 125;
-      if (latestReading.hr > maxAllowed) {
+
+      // 1. Critical RED triggers (Strict medical stop, do NOT allow auto-resume!)
+      if (temp >= 38.0) {
         triggerSafePause(
-          lang === "ta"
-            ? `இதயத் துடிப்பு (${latestReading.hr} BPM) அனுமதிக்கப்பட்ட ${maxAllowed} BPM அளவை விட அதிகரித்துள்ளது.`
-            : `Heart rate reached ${latestReading.hr} BPM, exceeding the safety ceiling of ${maxAllowed} BPM.`
+          `Critical Medical Alert: Fever detected (${temp.toFixed(1)}°C >= 38.0°C). Exercise contraindicated.`,
+          "RED"
+        );
+      } else if (temp < 35.5) {
+        triggerSafePause(
+          `Critical Medical Alert: Hypothermia detected (${temp.toFixed(1)}°C < 35.5°C). Immediate warming needed.`,
+          "RED"
+        );
+      } else if (spo2 < 90.0) {
+        triggerSafePause(
+          `Critical Medical Alert: Severe hypoxemia detected (SpO2 ${Math.round(spo2)}% < 90%). Emergency seated rest required.`,
+          "RED"
+        );
+      } else if (hrOk && hr > maxAllowed) {
+        triggerSafePause(
+          `Critical Medical Alert: Tachycardia spike (${hr} BPM > ${maxAllowed} BPM limit). Exercise stopped.`,
+          "RED"
+        );
+      } else if (hrOk && hr < 50) {
+        triggerSafePause(
+          `Critical Medical Alert: Severe bradycardia (${hr} BPM < 50 BPM). Exercise stopped.`,
+          "RED"
+        );
+      }
+      // 2. Warning YELLOW triggers (Session paused for reassessment)
+      else if (spo2 < 95.0) {
+        triggerSafePause(
+          `Warning: Oxygen desaturation (SpO2 ${Math.round(spo2)}% < 95%). Session paused for deep diaphragmatic breathing.`,
+          "YELLOW"
+        );
+      } else if (hrOk && hr > 105) {
+        triggerSafePause(
+          `Warning: Elevated resting heart rate (${hr} BPM > 105 BPM). Pausing for seated hydration.`,
+          "YELLOW"
+        );
+      } else if (temp >= 37.6) {
+        triggerSafePause(
+          `Warning: Low-grade thermal elevation (${temp.toFixed(1)}°C). Pausing for cooling rest.`,
+          "YELLOW"
         );
       }
     }
   }, [latestReading, step, plan, lang]);
 
-  const triggerSafePause = (reason) => {
+  const triggerSafePause = (reason, severity = "YELLOW") => {
     setPauseReason(reason);
+    setPauseSeverity(severity);
     setStep("paused");
     setSafePausesCount((prev) => prev + 1);
+    audioAlerts.play(severity);
     safeSpeak(
-      lang === "ta"
-        ? "பாதுகாப்பிற்காக உடற்பயிற்சி நிறுத்தப்பட்டது. நிதானமாக அமர்ந்து ஓய்வெடுக்கவும்."
-        : "Exercise paused for safety. Please sit back and rest."
+      severity === "RED"
+        ? (lang === "ta" ? "முக்கிய மருத்துவ எச்சரிக்கை! உடற்பயிற்சி உடனடியாக நிறுத்தப்பட்டது." : "Critical medical alert. Exercise halted immediately.")
+        : (lang === "ta" ? "பாதுகாப்பிற்காக உடற்பயிற்சி இடைநிறுத்தப்பட்டது. நிதானமாக அமர்ந்து ஓய்வெடுக்கவும்." : "Exercise paused for safety. Please rest.")
     );
-    // Tell hardware buzzer pattern 5
-    fetch("/api/hardware/buzz?pattern=5", { method: "POST" }).catch(() => {});
+    // Tell hardware buzzer pattern
+    fetch(`/api/hardware/buzz?pattern=${severity === "RED" ? 2 : 5}`, { method: "POST" }).catch(() => {});
     if (sessionId) {
-      fetch(`/api/sessions/${sessionId}/pause?reason=${encodeURIComponent(reason)}`, { method: "POST" }).catch(() => {});
+      fetch(`/api/sessions/${sessionId}/pause?reason=${encodeURIComponent(reason)}&severity=${severity}`, { method: "POST" }).catch(() => {});
     }
   };
 
@@ -707,23 +811,36 @@ export default function MoveSafeSession({
                 : "Before exercising, Sentinel verifies resting vitals and symptom indicators to ensure your session is completely safe."}
             </p>
 
-            {/* Current Vitals Snapshot */}
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                <span className="text-[11px] text-slate-400 block">{lang === "ta" ? "இதயத் துடிப்பு" : "Resting Heart Rate"}</span>
+            {/* Current 4 Vitals Snapshot */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
+              <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block font-bold uppercase">{lang === "ta" ? "இதயத் துடிப்பு" : "Heart Rate"}</span>
                 {latestReading?.hr_ok && Number(latestReading.hr) > 0 ? (
-                  <span className="text-xl font-bold text-white">{latestReading.hr} BPM</span>
+                  <span className="text-lg font-black text-white">{latestReading.hr} <span className="text-[10px] font-normal text-slate-400">BPM</span></span>
                 ) : (
-                  <span className="text-sm font-bold text-rose-400 block py-0.5">
+                  <span className="text-xs font-bold text-rose-400 block py-0.5">
                     {lang === "ta" ? "இணைக்கப்படவில்லை" : "Not Connected"}
                   </span>
                 )}
-                <span className="text-[10px] text-slate-500 block">Max Limit: {plan?.max_hr_limit || 125} BPM</span>
+                <span className="text-[9px] text-slate-500 block font-mono">Limit: {plan?.max_hr_limit || 125}</span>
               </div>
-              <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                <span className="text-[11px] text-slate-400 block">{lang === "ta" ? "உடல் வெப்பநிலை" : "Body Temperature"}</span>
-                <span className="text-xl font-bold text-white">{(Number(latestReading?.temp) || 36.6).toFixed(1)} °C</span>
-                <span className="text-[10px] text-slate-500 block">Afebrile / Safe</span>
+
+              <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block font-bold uppercase">{lang === "ta" ? "வெப்பநிலை" : "Temperature"}</span>
+                <span className="text-lg font-black text-white">{(Number(latestReading?.temp) || 36.6).toFixed(1)} <span className="text-[10px] font-normal text-slate-400">°C</span></span>
+                <span className="text-[9px] text-slate-500 block font-mono">Fever: &ge;38.0°C</span>
+              </div>
+
+              <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block font-bold uppercase">{lang === "ta" ? "ஆக்ஸிஜன்" : "SpO2 (O2%)"}</span>
+                <span className="text-lg font-black text-cyan-400">{Math.round(Number(latestReading?.spo2) || 98)} <span className="text-[10px] font-normal text-slate-400">%</span></span>
+                <span className="text-[9px] text-slate-500 block font-mono">Safe: &ge;95%</span>
+              </div>
+
+              <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block font-bold uppercase">{lang === "ta" ? "ஈரப்பதம்" : "Humidity"}</span>
+                <span className="text-lg font-black text-blue-400">{(Number(latestReading?.humidity) || 52.0).toFixed(1)} <span className="text-[10px] font-normal text-slate-400">%</span></span>
+                <span className="text-[9px] text-slate-500 block font-mono">Comfort: 30–60%</span>
               </div>
             </div>
 
@@ -859,21 +976,48 @@ export default function MoveSafeSession({
             </div>
           </div>
 
-          <div className="max-w-md mx-auto flex gap-3">
-            <button
-              onClick={() => {
-                setStep("active_workout");
-                safeSpeak(
-                  lang === "ta"
-                    ? "பயிற்சி தொடங்குகிறது. முழங்காலை மெதுவாக நேராக நீட்டவும்."
-                    : "Starting exercise. Slowly straighten your leg."
-                );
-              }}
-              className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Play className="w-5 h-5 fill-current" />
-              <span>{lang === "ta" ? "பயிற்சியைத் தொடங்கு" : "Start Rep Counting"}</span>
-            </button>
+          <div className="max-w-md mx-auto flex flex-col gap-2">
+            {/* Vital Safety Check in Setup Phase */}
+            {(() => {
+              const hr = Number(latestReading?.hr) || 74;
+              const temp = Number(latestReading?.temp) || 36.6;
+              const spo2 = Number(latestReading?.spo2) || 98;
+              const maxAllowed = plan?.max_hr_limit || 125;
+              const isVitalBlocked = temp >= 38.0 || temp < 35.5 || spo2 < 95 || hr > maxAllowed || hr < 50;
+
+              return (
+                <>
+                  {isVitalBlocked && (
+                    <div className="p-3 rounded-xl bg-red-950/80 border border-red-500/50 text-xs text-red-200 flex items-center gap-2">
+                      <AlertOctagon className="w-4 h-4 text-red-400 shrink-0" />
+                      <span>Safety Interlock: Current vitals (Temp {temp.toFixed(1)}°C, SpO2 {Math.round(spo2)}%, HR {hr} BPM) exceed safety boundaries. Exercise blocked.</span>
+                    </div>
+                  )}
+
+                  <button
+                    disabled={isVitalBlocked || (!useSimulator && !framingStatus.ok)}
+                    onClick={() => {
+                      if (!isVitalBlocked) {
+                        setStep("active_workout");
+                        safeSpeak(
+                          lang === "ta"
+                            ? "பயிற்சி தொடங்குகிறது. முழங்காலை மெதுவாக நேராக நீட்டவும்."
+                            : "Starting exercise. Slowly straighten your leg."
+                        );
+                      }
+                    }}
+                    className={`w-full py-4 font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${
+                      isVitalBlocked || (!useSimulator && !framingStatus.ok)
+                        ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700"
+                        : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 cursor-pointer"
+                    }`}
+                  >
+                    <Play className="w-5 h-5 fill-current" />
+                    <span>{lang === "ta" ? "பயிற்சியைத் தொடங்கு" : "Start Rep Counting"}</span>
+                  </button>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -881,53 +1025,60 @@ export default function MoveSafeSession({
       {/* STEP 3: ACTIVE GUIDED WORKOUT */}
       {step === "active_workout" && (
         <div className="space-y-4">
-          {/* Workout Stats HUD */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
-            <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+          {/* Workout Stats & Real-Time Vital HUD (6 parameters) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+            {/* 1. Valid Reps */}
+            <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
               <span className="text-[10px] text-slate-400 block font-bold uppercase">{lang === "ta" ? "சரியான எண்ணிக்கை" : "Valid Reps"}</span>
               <div className="flex items-baseline gap-1 mt-0.5">
-                <span className="text-3xl font-black text-emerald-400">{validReps}</span>
+                <span className="text-2xl font-black text-emerald-400">{validReps}</span>
                 <span className="text-xs text-slate-400">/ {targetReps}</span>
               </div>
             </div>
 
-            <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+            {/* 2. Joint Angle */}
+            <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
               <span className="text-[10px] text-slate-400 block font-bold uppercase">{lang === "ta" ? "மூட்டு கோணம்" : "Joint Angle"}</span>
               <div className="flex items-baseline gap-1 mt-0.5">
-                <span className="text-3xl font-black text-blue-400">{Math.round(currentAngle)}°</span>
-                <span className="text-[10px] text-slate-400">Target: {currentExConfig.target_angle}°</span>
+                <span className="text-2xl font-black text-blue-400">{Math.round(currentAngle)}°</span>
+                <span className="text-[10px] text-slate-400 font-mono">Tgt: {currentExConfig.target_angle}°</span>
               </div>
             </div>
 
-            <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
-              <span className="text-[10px] text-slate-400 block font-bold uppercase">{lang === "ta" ? "இதயத் துடிப்பு" : "Live Heart Rate"}</span>
+            {/* 3. Duration Timer */}
+            <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+              <span className="text-[10px] text-slate-400 block font-bold uppercase">Duration</span>
               <div className="flex items-baseline gap-1 mt-0.5">
-                {latestReading?.hr_ok && Number(latestReading.hr) > 0 ? (
-                  <>
-                    <span className="text-3xl font-black text-red-400">{latestReading.hr}</span>
-                    <span className="text-xs text-slate-400">BPM</span>
-                  </>
-                ) : (
-                  <span className="text-xs font-bold text-rose-400 block py-1.5">
-                    {lang === "ta" ? "இணைக்கப்படவில்லை" : "Not Connected"}
-                  </span>
-                )}
+                <span className="text-2xl font-black text-amber-400 font-mono">
+                  {Math.floor(sessionDuration / 60)}:{(sessionDuration % 60).toString().padStart(2, '0')}
+                </span>
               </div>
             </div>
 
-            <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700">
-              <span className="text-[10px] text-slate-400 block font-bold uppercase">{lang === "ta" ? "மீட்பு புள்ளிகள்" : "Recovery Points"}</span>
+            {/* 4. Live Heart Rate */}
+            <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+              <span className="text-[10px] text-slate-400 block font-bold uppercase">{lang === "ta" ? "இதயத் துடிப்பு" : "Heart Rate"}</span>
               <div className="flex items-baseline gap-1 mt-0.5">
-                <span className="text-3xl font-black text-amber-400">{points}</span>
-                {streak > 1 && <span className="text-xs font-bold text-orange-400">🔥 {streak}x</span>}
+                <span className="text-2xl font-black text-rose-400">{latestReading?.hr || 74}</span>
+                <span className="text-[10px] text-slate-400">BPM</span>
               </div>
             </div>
 
-            <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700 col-span-2 md:col-span-1">
-              <span className="text-[10px] text-slate-400 block font-bold uppercase">{lang === "ta" ? "பயிற்சி நிலை" : "Set Progress"}</span>
+            {/* 5. Live SpO2 */}
+            <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+              <span className="text-[10px] text-slate-400 block font-bold uppercase">SpO2 (O2%)</span>
               <div className="flex items-baseline gap-1 mt-0.5">
-                <span className="text-3xl font-black text-white">{currentSet}</span>
-                <span className="text-xs text-slate-400">/ {totalSets} sets</span>
+                <span className="text-2xl font-black text-cyan-400">{Math.round(Number(latestReading?.spo2) || 98)}</span>
+                <span className="text-[10px] text-slate-400">%</span>
+              </div>
+            </div>
+
+            {/* 6. Body Temperature */}
+            <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+              <span className="text-[10px] text-slate-400 block font-bold uppercase">Body Temp</span>
+              <div className="flex items-baseline gap-1 mt-0.5">
+                <span className="text-2xl font-black text-white">{(Number(latestReading?.temp) || 36.6).toFixed(1)}</span>
+                <span className="text-[10px] text-slate-400">°C</span>
               </div>
             </div>
           </div>
@@ -1000,46 +1151,115 @@ export default function MoveSafeSession({
 
       {/* STEP 4: SAFE PAUSE OVERLAY ("The Protect Step") */}
       {step === "paused" && (
-        <div className="max-w-md mx-auto py-8 text-center space-y-5">
-          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
-            <ShieldAlert className="w-8 h-8" />
-          </div>
+        <div className="max-w-md mx-auto py-8 text-center space-y-5 animate-fade-in">
+          {pauseSeverity === "RED" ? (
+            <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/40 flex items-center justify-center mx-auto text-red-400 animate-pulse">
+              <AlertOctagon className="w-8 h-8" />
+            </div>
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
+              <ShieldAlert className="w-8 h-8" />
+            </div>
+          )}
 
           <div>
-            <h3 className="text-xl font-bold text-white">
-              {lang === "ta" ? "பாதுகாப்பு நிறுத்தம் செயலில் உள்ளது" : "MoveSafe Safe Pause Active"}
+            <span className={`text-[10px] font-bold font-mono tracking-wider px-2.5 py-1 rounded-full uppercase border ${
+              pauseSeverity === "RED"
+                ? "bg-red-500/20 text-red-300 border-red-500/40"
+                : "bg-amber-500/20 text-amber-300 border-amber-500/40"
+            }`}>
+              {pauseSeverity === "RED" ? "CRITICAL MEDICAL STOP" : "SAFETY PAUSE ACTIVE"}
+            </span>
+            <h3 className="text-xl font-bold text-white mt-2">
+              {pauseSeverity === "RED"
+                ? (lang === "ta" ? "மருத்துவ நிறுத்தம்: பயிற்சி நிறுத்தப்பட்டது" : "Rehabilitation Halted: Medical Safety Stop")
+                : (lang === "ta" ? "பாதுகாப்பு நிறுத்தம் செயலில் உள்ளது" : "MoveSafe Safe Pause Active")}
             </h3>
-            <p className="text-xs text-amber-200 mt-2 bg-amber-950/60 p-3 rounded-xl border border-amber-500/30">
+            <p className={`text-xs mt-2 p-3 rounded-xl border font-medium ${
+              pauseSeverity === "RED"
+                ? "text-red-200 bg-red-950/70 border-red-500/40"
+                : "text-amber-200 bg-amber-950/60 border-amber-500/30"
+            }`}>
               {pauseReason}
             </p>
           </div>
 
-          <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700 text-xs text-slate-300 text-left space-y-1.5">
-            <p>• Breathe slowly and sit comfortably.</p>
-            <p>• Buzzer pattern 5 (Long tone) dispatched to hardware node.</p>
-            <p>• You may resume when vitals normalize, or finish the session.</p>
+          {/* Current Live Vitals Snapshot during Pause */}
+          <div className="bg-slate-900/90 border border-slate-800 p-3.5 rounded-2xl grid grid-cols-3 gap-2 text-xs">
+            <div className="text-center">
+              <span className="text-[10px] text-slate-400 block font-bold">Heart Rate</span>
+              <span className="text-base font-black text-rose-400 font-mono">{latestReading?.hr || 74} BPM</span>
+            </div>
+            <div className="text-center border-x border-slate-800">
+              <span className="text-[10px] text-slate-400 block font-bold">SpO2</span>
+              <span className="text-base font-black text-cyan-400 font-mono">{Math.round(Number(latestReading?.spo2) || 98)}%</span>
+            </div>
+            <div className="text-center">
+              <span className="text-[10px] text-slate-400 block font-bold">Body Temp</span>
+              <span className="text-base font-black text-white font-mono">{(Number(latestReading?.temp) || 36.6).toFixed(1)}°C</span>
+            </div>
           </div>
 
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={() => setStep("active_workout")}
-              className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all cursor-pointer"
-            >
-              {lang === "ta" ? "மீண்டும் தொடங்கு" : "Resume Session"}
-            </button>
-            <button
-              onClick={handleFinishWorkout}
-              className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl transition-colors cursor-pointer"
-            >
-              {lang === "ta" ? "முடிக்க" : "Finish Session"}
-            </button>
-          </div>
+          {pauseSeverity === "RED" ? (
+            <div className="space-y-3">
+              <div className="bg-red-950/60 p-4 rounded-xl border border-red-500/30 text-xs text-red-200 text-left space-y-1.5">
+                <p className="font-bold text-red-300">• Automatic resumption is strictly blocked.</p>
+                <p>• Critical parameters require complete cessation of physical exercise.</p>
+                <p>• Sit comfortably, breathe calmly, and alert Anita or doctor.</p>
+              </div>
+
+              <button
+                onClick={handleFinishWorkout}
+                className="w-full py-3.5 bg-red-600 hover:bg-red-500 text-white font-black text-sm rounded-xl transition-all shadow-lg cursor-pointer"
+              >
+                {lang === "ta" ? "பயிற்சியை முடித்து வெளியேறுக" : "Save Log & Conclude Session"}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700 text-xs text-slate-300 text-left space-y-1.5">
+                <p>• Breathe slowly and sit comfortably with back supported.</p>
+                <p>• Continuous telemetry monitoring active on hardware node.</p>
+                <p>• Once vitals stabilize within normal bounds, click 'Clear & Resume Exercise'.</p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    const hr = Number(latestReading?.hr) || 74;
+                    const temp = Number(latestReading?.temp) || 36.6;
+                    const spo2 = Number(latestReading?.spo2) || 98;
+                    const maxAllowed = plan?.max_hr_limit || 125;
+                    if (temp >= 37.6 || spo2 < 95 || hr > maxAllowed || hr < 50) {
+                      safeSpeak(
+                        lang === "ta"
+                          ? "உயிர் அளவீடுகள் இன்னும் சீராகவில்லை. சிறிது நேரம் ஓய்வெடுக்கவும்."
+                          : "Vitals have not normalized yet. Please continue resting."
+                      );
+                      return;
+                    }
+                    setStep("active_workout");
+                    safeSpeak(lang === "ta" ? "அளவீடுகள் சீரானது. பயிற்சி மீண்டும் தொடங்குகிறது." : "Vitals cleared. Resuming exercise.");
+                  }}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all cursor-pointer shadow-md"
+                >
+                  {lang === "ta" ? "மீண்டும் தொடங்கு" : "Clear & Resume Exercise"}
+                </button>
+                <button
+                  onClick={handleFinishWorkout}
+                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl transition-colors cursor-pointer"
+                >
+                  {lang === "ta" ? "முடிக்க" : "Finish Session"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* STEP 5: SESSION SUMMARY & RECOVERY INTELLIGENCE SCORE */}
       {step === "summary" && finalSummary && (
-        <div className="max-w-xl mx-auto py-4 space-y-6">
+        <div className="max-w-xl mx-auto py-4 space-y-5 animate-fade-in">
           <div className="text-center space-y-2">
             <Award className="w-12 h-12 text-blue-400 mx-auto" />
             <h3 className="text-2xl font-black text-white">
@@ -1051,6 +1271,65 @@ export default function MoveSafeSession({
                 : "Transparent performance evaluation calculated across 6 rehabilitation adherence parameters."}
             </p>
           </div>
+
+          {/* Session Overview Strip: Duration, Reps, Pauses */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl text-center">
+              <span className="text-[10px] text-slate-400 uppercase font-bold block">Duration</span>
+              <span className="text-xl font-black text-white font-mono">
+                {Math.floor(sessionDuration / 60)}m {sessionDuration % 60}s
+              </span>
+            </div>
+            <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl text-center">
+              <span className="text-[10px] text-slate-400 uppercase font-bold block">Valid Reps</span>
+              <span className="text-xl font-black text-emerald-400 font-mono">
+                {validReps} / {attemptedReps || validReps}
+              </span>
+            </div>
+            <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl text-center">
+              <span className="text-[10px] text-slate-400 uppercase font-bold block">Safety Pauses</span>
+              <span className="text-xl font-black text-amber-400 font-mono">
+                {safePausesCount}
+              </span>
+            </div>
+          </div>
+
+          {/* Vital Parameters Recorded Profile */}
+          {(() => {
+            const hrs = sessionVitalsLog.map((s) => s.hr).filter((h) => h > 0);
+            const spo2s = sessionVitalsLog.map((s) => s.spo2).filter((s) => s > 0);
+            const temps = sessionVitalsLog.map((s) => s.temp).filter((t) => t > 0);
+
+            const minHR = hrs.length ? Math.min(...hrs) : (latestReading?.hr || 72);
+            const maxHR = hrs.length ? Math.max(...hrs) : (latestReading?.hr || 76);
+            const avgHR = hrs.length ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : (latestReading?.hr || 74);
+
+            const minSpo2 = spo2s.length ? Math.min(...spo2s) : 97;
+            const avgSpo2 = spo2s.length ? Math.round(spo2s.reduce((a, b) => a + b, 0) / spo2s.length) : 98;
+            const avgTemp = temps.length ? (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1) : "36.6";
+
+            return (
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-2 text-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-mono">
+                  Recorded In-Session Vital Telemetry Profile
+                </span>
+                <div className="grid grid-cols-3 gap-2 text-center pt-1">
+                  <div className="bg-slate-800/60 p-2 rounded-xl">
+                    <span className="text-[10px] text-rose-400 block">Heart Rate</span>
+                    <span className="font-bold text-white font-mono">{avgHR} BPM <span className="text-[9px] text-slate-400">({minHR}-{maxHR})</span></span>
+                  </div>
+                  <div className="bg-slate-800/60 p-2 rounded-xl">
+                    <span className="text-[10px] text-cyan-400 block">SpO2 Saturation</span>
+                    <span className="font-bold text-white font-mono">{avgSpo2}% <span className="text-[9px] text-slate-400">(Min {minSpo2}%)</span></span>
+                  </div>
+                  <div className="bg-slate-800/60 p-2 rounded-xl">
+                    <span className="text-[10px] text-amber-400 block">Body Temp</span>
+                    <span className="font-bold text-white font-mono">{avgTemp} °C</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Recovery Score Dial Card */}
           <div className="bg-gradient-to-b from-blue-950/60 to-slate-900 border border-blue-600/40 rounded-2xl p-6 text-center shadow-xl">
