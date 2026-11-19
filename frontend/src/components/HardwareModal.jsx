@@ -19,12 +19,14 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
     mode: "simulator",
     connected: false,
     port: "AUTO",
-    baud: 115200,
+    baud: 9600,
     last_packet_time: null,
     last_raw_line: null,
+    last_error: null,
     available_ports: []
   });
   const [selectedPort, setSelectedPort] = useState("AUTO");
+  const [selectedBaud, setSelectedBaud] = useState(9600);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -36,6 +38,11 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
         setStatus(data);
         if (data.port && data.port !== "AUTO") {
           setSelectedPort(data.port);
+        } else if (data.available_ports && data.available_ports.length > 0 && selectedPort === "AUTO") {
+          setSelectedPort(data.available_ports[0].port);
+        }
+        if (data.baud) {
+          setSelectedBaud(data.baud);
         }
       }
     } catch (err) {
@@ -46,7 +53,7 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
   useEffect(() => {
     if (isOpen) {
       fetchStatus();
-      const interval = setInterval(fetchStatus, 2000);
+      const interval = setInterval(fetchStatus, 1500);
       return () => clearInterval(interval);
     }
   }, [isOpen]);
@@ -55,15 +62,17 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
     setLoading(true);
     setMsg("");
     try {
-      const res = await fetch(`/api/hardware/connect?port=${encodeURIComponent(selectedPort)}&baud=115200`, {
+      const res = await fetch(`/api/hardware/connect?port=${encodeURIComponent(selectedPort)}&baud=${selectedBaud}`, {
         method: "POST"
       });
       const data = await res.json();
       setStatus(data);
       if (data.connected) {
-        setMsg(lang === "ta" ? `ஹார்டுவேர் வெற்றிகரமாக இணைக்கப்பட்டது: ${data.port}` : `Connected successfully to ${data.port}!`);
+        setMsg(lang === "ta" ? `ஹார்டுவேர் வெற்றிகரமாக இணைக்கப்பட்டது: ${data.port}` : `Connected successfully to ${data.port} at ${selectedBaud} baud!`);
+      } else if (data.last_error) {
+        setMsg(data.last_error);
       } else {
-        setMsg(lang === "ta" ? "ஹார்டுவேர் போர்ட் தேடப்படுகிறது... Arduino USB கேபிளை செருகவும்." : "Searching for hardware... Please ensure Arduino USB cable is plugged in.");
+        setMsg(lang === "ta" ? "ஹார்டுவேர் போர்ட் தேடப்படுகிறது... Arduino USB கேபிளை செருகவும்." : "Connecting to port... Ensure Arduino Serial Monitor is closed.");
       }
     } catch (err) {
       setMsg("Connection failed: " + err.message);
@@ -127,7 +136,7 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
         <div className="p-5 space-y-4 text-xs max-h-[80vh] overflow-y-auto">
           {/* Connection Controller Card */}
           <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
                   {lang === "ta" ? "சீரியல் போர்ட் தேர்வு" : "Select Serial COM Port"}
@@ -136,7 +145,7 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
                   <select
                     value={selectedPort}
                     onChange={(e) => setSelectedPort(e.target.value)}
-                    className="bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
                     <option value="AUTO">AUTO (Scan & Pick Connected Device)</option>
                     {status.available_ports && status.available_ports.map((p) => (
@@ -148,7 +157,7 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
 
                   <button
                     onClick={fetchStatus}
-                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 cursor-pointer transition-colors"
+                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 cursor-pointer transition-colors shrink-0"
                     title="Refresh available COM ports"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
@@ -156,32 +165,59 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0">
-                {!status.connected ? (
-                  <button
-                    onClick={handleConnect}
-                    disabled={loading}
-                    className="py-2 px-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-lg shadow-md shadow-emerald-600/30 flex items-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    <Zap className="w-4 h-4" />
-                    <span>{loading ? "Connecting..." : (lang === "ta" ? "ஹார்டுவேர் இணை" : "Connect to Hardware")}</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleDisconnect}
-                    disabled={loading}
-                    className="py-2 px-4 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold rounded-lg shadow-md shadow-rose-600/30 flex items-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    <Square className="w-3.5 h-3.5" />
-                    <span>{loading ? "Disconnecting..." : (lang === "ta" ? "சிமுலேட்டருக்கு மாறு" : "Switch to Simulator")}</span>
-                  </button>
-                )}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                  {lang === "ta" ? "பாட் ரேட் (Baud Rate)" : "Baud Rate"}
+                </label>
+                <select
+                  value={selectedBaud}
+                  onChange={(e) => setSelectedBaud(Number(e.target.value))}
+                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value={9600}>9600 (Sentinel LCD - Recommended)</option>
+                  <option value={115200}>115200 (ReBuild Standard Firmware)</option>
+                </select>
               </div>
             </div>
 
+            {/* Action Buttons */}
+            <div className="pt-1 flex items-center justify-end">
+              {!status.connected ? (
+                <button
+                  onClick={handleConnect}
+                  disabled={loading}
+                  className="w-full sm:w-auto py-2 px-5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-lg shadow-md shadow-emerald-600/30 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Zap className="w-4 h-4" />
+                  <span>{loading ? "Connecting..." : (lang === "ta" ? "ஹார்டுவேர் இணை" : "Connect to Hardware")}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleDisconnect}
+                  disabled={loading}
+                  className="w-full sm:w-auto py-2 px-5 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold rounded-lg shadow-md shadow-rose-600/30 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Square className="w-3.5 h-3.5" />
+                  <span>{loading ? "Disconnecting..." : (lang === "ta" ? "சிமுலேட்டருக்கு மாறு" : "Switch to Simulator")}</span>
+                </button>
+              )}
+            </div>
+
+            {/* Port Busy or Access Notice */}
+            {status.last_error && (
+              <div className="p-3 rounded-xl bg-amber-950/60 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5 animate-fade-in">
+                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-bold text-amber-300">
+                    {lang === "ta" ? "போர்ட் அணுகல் எச்சரிக்கை (Serial Busy)" : "COM Port Busy / Locked"}
+                  </div>
+                  <div className="text-[11px] leading-relaxed text-amber-100">{status.last_error}</div>
+                </div>
+              </div>
+            )}
+
             {/* Notification message */}
-            {msg && (
+            {msg && !status.last_error && (
               <div className="p-2.5 rounded-lg bg-blue-950/60 border border-blue-500/30 text-blue-200 text-[11px] font-semibold animate-fade-in flex items-center gap-2">
                 <CheckCircle className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                 <span>{msg}</span>
@@ -226,17 +262,17 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
                   <span>{lang === "ta" ? "USB கேபிளை செருகவும்" : "1. Plug Arduino USB Cable"}</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Connect your Arduino Uno or Nano board to any USB port on this computer.
+                  Connect your Arduino Uno or Nano board (Silicon Labs CP210x on COM3) to your PC.
                 </p>
               </div>
 
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
                 <div className="flex items-center gap-1.5 font-bold text-purple-400">
                   <span className="w-4 h-4 rounded-full bg-purple-600/30 border border-purple-500 flex items-center justify-center text-[10px] text-purple-300">2</span>
-                  <span>{lang === "ta" ? "Firmware பதிவேற்றவும்" : "2. Flash rebuild.ino"}</span>
+                  <span>{lang === "ta" ? "Firmware பதிவேற்றவும்" : "2. Flash sentinel_lcdac.ino"}</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Open <code className="text-purple-300 font-mono">firmware/rebuild/rebuild.ino</code> in Arduino IDE and click <strong>Upload</strong>.
+                  Open <code className="text-purple-300 font-mono">sentinel_lcdac.ino</code> in Arduino IDE and click <strong>Upload</strong>.
                 </p>
               </div>
 
@@ -246,7 +282,7 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
                   <span>{lang === "ta" ? "Serial Monitor ஐ மூடவும்" : "3. Close Arduino Serial Monitor"}</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  <strong>Important:</strong> Close the Arduino IDE Serial Monitor window so Windows frees the COM port for ReBuild.
+                  <strong className="text-amber-300">CRITICAL:</strong> Close the Arduino IDE Serial Monitor tab. Windows gives <em>Access Denied</em> if two apps open COM3 at the same time.
                 </p>
               </div>
 
@@ -256,7 +292,7 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
                   <span>{lang === "ta" ? "இணைக்கவும்" : "4. Click Connect"}</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Click the green <strong>"Connect to Hardware"</strong> button above. Live data streams straight to your dashboard!
+                  Select <strong>9600 Baud</strong> and click <strong>"Connect to Hardware"</strong>. Live sensor readings will stream directly to the dashboard!
                 </p>
               </div>
             </div>
@@ -270,7 +306,7 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                   LIVE HARDWARE DATA PACKET:
                 </span>
-                <span>Port: {status.port} @ 115200</span>
+                <span>Port: {status.port} @ {status.baud || 9600} Baud</span>
               </div>
               <div className="text-slate-200 text-[11px] break-all bg-slate-950 p-2 rounded border border-slate-900">
                 {status.last_raw_line || "Waiting for next 1-Hz packet from Arduino..."}
@@ -281,7 +317,7 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
 
         {/* Footer */}
         <div className="bg-slate-950 p-3 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-          <span>Baud Rate: 115200 Baud (8-N-1)</span>
+          <span>Active Baud Rate: {status.baud || selectedBaud} Baud (8-N-1)</span>
           <button
             onClick={onClose}
             className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-semibold transition-colors cursor-pointer"

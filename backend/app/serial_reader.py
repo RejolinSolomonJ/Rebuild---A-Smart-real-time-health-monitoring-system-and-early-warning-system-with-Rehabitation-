@@ -18,7 +18,7 @@ class SerialIngestionWorker:
     def __init__(
         self,
         port: str = "AUTO",
-        baud: int = 115200,
+        baud: int = 9600,
         use_simulator: bool = True,
         on_reading_callback: Optional[Callable[[Dict[str, Any]], None]] = None
     ):
@@ -34,6 +34,7 @@ class SerialIngestionWorker:
         self.connected_port: Optional[str] = None
         self.last_packet_time: Optional[float] = None
         self.last_raw_line: Optional[str] = None
+        self.last_error: Optional[str] = None
         self._loop_task: Optional[asyncio.Task] = None
 
     @staticmethod
@@ -77,6 +78,7 @@ class SerialIngestionWorker:
             "baud": self.baud,
             "last_packet_time": self.last_packet_time,
             "last_raw_line": self.last_raw_line,
+            "last_error": self.last_error,
             "available_ports": self.scan_ports()
         }
 
@@ -98,13 +100,16 @@ class SerialIngestionWorker:
         """
         Parses JSON line or Key-Value line from serial or simulator
         and performs signal-quality validation.
+        Supports both ReBuild standard telemetry and sentinel_lcdac (T=...,H=...,MOTION=...,VIB=...,IDLE=...,STATE=...).
         """
+        import math
         line = line.strip()
         if not line:
             return None
 
         self.last_raw_line = line
         self.last_packet_time = time.time()
+        self.last_error = None
 
         data: Optional[Dict[str, Any]] = None
 
@@ -116,8 +121,8 @@ class SerialIngestionWorker:
                 logger.warning(f"Malformed serial JSON dropped: {line}")
                 return None
 
-        # 2. Try parsing Key-Value format: T=36.6,H=52.0,HR=72,HR_OK=1,MOT=1,IDLE=0,VIB=2,IMP=0,STATE=S_NORMAL
-        elif "=" in line and ("T=" in line or "HR=" in line or "MOT=" in line):
+        # 2. Try parsing Key-Value format (e.g., T=28.5,H=60.2,MOTION=1,VIB=0,IDLE=4,STATE=NORMAL)
+        elif "=" in line and any(k in line.upper() for k in ["T=", "H=", "HR=", "MOT=", "MOTION="]):
             try:
                 kv = {}
                 for part in line.split(","):
@@ -125,11 +130,77 @@ class SerialIngestionWorker:
                         k, v = part.split("=", 1)
                         kv[k.strip().upper()] = v.strip()
 
-                temp_val = float(kv.get("T", 36.6))
-                hum_val = float(kv.get("H", 52.0))
-                hr_raw = int(float(kv.get("HR", 0)))
+                # Temperature parsing with NaN safe fallback
+                raw_t = kv.get("T", "36.6")
+                try:
+                    temp_val = float(raw_t)
+                    if math.isnan(temp_val) or math.isinf(temp_val):
+                        temp_val = 36.6
+                except (ValueError, TypeError):
+                    temp_val = 36.6
+
+                # Humidity parsing with NaN safe fallback
+                raw_h = kv.get("H", "52.0")
+                try:
+                    hum_val = float(raw_h)
+                    if math.isnan(hum_val) or math.isinf(hum_val):
+                        hum_val = 52.0
+                except (ValueError, TypeError):
+                    hum_val = 52.0
+
+                # Heart rate: sentinel_lcdac has no HR sensor, so defaults to 0 and hr_ok=False
+                hr_raw = 0
+                if "HR" in kv and kv.get("HR") != "NaN":
+                    try:
+                        hr_raw = int(float(kv.get("HR", 0)))
+                    except Exception:
+                        hr_raw = 0
+
                 hr_ok_raw = kv.get("HR_OK", "1" if hr_raw > 0 else "0")
                 hr_ok_bool = bool(int(float(hr_ok_raw))) and (hr_raw > 0)
+
+                # Motion: support both MOTION= and MOT=
+                motion_raw = kv.get("MOTION", kv.get("MOT", 0))
+                try:
+                    motion_val = int(float(motion_raw))
+                except Exception:
+                    motion_val = 0
+
+                # Vibration
+                vib_raw = kv.get("VIB", 0)
+                try:
+                    vib_val = int(float(vib_raw))
+                except Exception:
+                    vib_val = 0
+
+                # Idle seconds
+                idle_raw = kv.get("IDLE", 0)
+                try:
+                    idle_val = int(float(idle_raw))
+                except Exception:
+                    idle_val = 0
+
+                # Impact
+                imp_raw = kv.get("IMP", kv.get("IMPACT", 0))
+                try:
+                    imp_val = int(float(imp_raw))
+                except Exception:
+                    imp_val = 0
+
+                # State mapping: "NORMAL", "HIGH TEMP", "INACTIVE", "FALL CHECK", "FALL ALARM"
+                raw_state = kv.get("STATE", "S_NORMAL").strip().upper()
+                if raw_state in ["NORMAL", "S_NORMAL"]:
+                    state_val = "S_NORMAL"
+                elif "HIGH" in raw_state or "TEMP" in raw_state:
+                    state_val = "S_HIGH_TEMP"
+                elif "INACTIVE" in raw_state:
+                    state_val = "S_INACTIVE"
+                elif "CHECK" in raw_state:
+                    state_val = "S_FALL_CHECK"
+                elif "ALARM" in raw_state or "ALERT" in raw_state:
+                    state_val = "S_FALL_ALARM"
+                else:
+                    state_val = raw_state
 
                 data = {
                     "t": int(time.time() * 1000),
@@ -137,12 +208,12 @@ class SerialIngestionWorker:
                     "humidity": hum_val,
                     "hr": hr_raw if hr_ok_bool else 0,
                     "hr_ok": hr_ok_bool,
-                    "motion": int(float(kv.get("MOT", 0))),
-                    "idle_s": int(float(kv.get("IDLE", 0))),
-                    "vib": int(float(kv.get("VIB", 0))),
-                    "impact": int(float(kv.get("IMP", 0))),
+                    "motion": motion_val,
+                    "idle_s": idle_val,
+                    "vib": vib_val,
+                    "impact": imp_val,
                     "arm": int(float(kv.get("ARM", 0))),
-                    "system_state": kv.get("STATE", "S_NORMAL"),
+                    "system_state": state_val,
                     "fw": "1.0"
                 }
             except Exception as e:
@@ -242,7 +313,13 @@ class SerialIngestionWorker:
                     await asyncio.sleep(0.02)
 
             except Exception as e:
-                logger.warning(f"Serial port {target_port} unavailable ({e}). Reconnecting in 3 seconds...")
+                err_str = str(e)
+                if "PermissionError" in err_str or "Access is denied" in err_str:
+                    friendly_err = f"Port {target_port} is busy or locked (Access Denied). Please CLOSE the Serial Monitor in Arduino IDE so the application can read live sensor data."
+                else:
+                    friendly_err = f"Serial port {target_port} error: {err_str}"
+                self.last_error = friendly_err
+                logger.warning(f"Serial port {target_port} unavailable ({err_str}). Reconnecting in 3 seconds...")
                 if self.serial_conn:
                     try:
                         self.serial_conn.close()

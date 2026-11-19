@@ -43,3 +43,30 @@ def test_malformed_serial_line_handling():
 
     # Empty string
     assert worker.process_raw_line('') is None
+
+def test_sentinel_lcdac_key_value_parsing():
+    worker = SerialIngestionWorker(use_simulator=True)
+
+    # Standard reading from sentinel_lcdac.ino
+    line = "T=28.5,H=60.2,MOTION=1,VIB=0,IDLE=4,STATE=NORMAL"
+    data = worker.process_raw_line(line)
+    assert data is not None
+    assert data["temp"] == 28.5
+    assert data["humidity"] == 60.2
+    assert data["motion"] == 1
+    assert data["vib"] == 0
+    assert data["idle_s"] == 4
+    assert data["system_state"] == "S_NORMAL"
+    # HR is not fitted in sentinel_lcdac -> marked not connected
+    assert data["hr"] == 0
+    assert data["hr_ok"] is False
+    assert data["low_signal"] is True
+    assert "Heartbeat sensor is not connected" in data["signal_notice"]
+
+    # DHT22 warm-up / error reading with NaN
+    line_nan = "T=NaN,H=NaN,MOTION=0,VIB=0,IDLE=10,STATE=NORMAL"
+    data_nan = worker.process_raw_line(line_nan)
+    assert data_nan is not None
+    assert data_nan["temp"] == 36.6  # Safe fallback
+    assert data_nan["humidity"] == 52.0  # Safe fallback
+    assert data_nan["motion"] == 0

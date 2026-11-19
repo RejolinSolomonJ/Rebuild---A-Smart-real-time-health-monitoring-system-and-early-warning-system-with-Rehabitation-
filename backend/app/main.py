@@ -113,7 +113,7 @@ ws_manager = ConnectionManager()
 # Background Serial Worker Setup
 USE_SIMULATOR = os.getenv("USE_SIMULATOR", "true").lower() == "true"
 SERIAL_PORT = os.getenv("SERIAL_PORT", "COM3")
-BAUD = int(os.getenv("BAUD", "115200"))
+BAUD = int(os.getenv("BAUD", "9600"))
 
 def on_hardware_reading(data: Dict[str, Any]):
     # Synchronous callback dispatched from serial line reader
@@ -1084,7 +1084,7 @@ def get_hardware_status():
     return serial_worker.get_status()
 
 @app.post("/api/hardware/connect")
-async def connect_hardware(port: str = "AUTO", baud: int = 115200):
+async def connect_hardware(port: str = "AUTO", baud: int = 9600):
     serial_worker.port = port
     serial_worker.baud = baud
     serial_worker.use_simulator = False
