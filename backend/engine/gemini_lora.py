@@ -326,7 +326,7 @@ Your role is to assist patient {p['name']} ({p['age']}yo, {p['gender']}), who ha
         system_prompt = self.build_lora_system_prompt(history)
 
         raw_response = None
-        model_used = "ReBuild4-LoRA-Engine (Local Rank-Adapted)"
+        model_used = "Google Gemini Clinical LoRA AI"
 
         if self.api_key:
             raw_response = await self.query_gemini_api(query, system_prompt)

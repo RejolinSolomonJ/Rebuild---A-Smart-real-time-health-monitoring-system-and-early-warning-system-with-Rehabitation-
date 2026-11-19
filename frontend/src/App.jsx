@@ -23,15 +23,24 @@ import SleepRestView from "./views/SleepRestView";
 import SentinelNodeView from "./views/SentinelNodeView";
 import ProgressView from "./views/ProgressView";
 import SettingsView from "./views/SettingsView";
+import LoginModal from "./views/LoginModal";
+import MobileBottomNav from "./components/MobileBottomNav";
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState({
+    id: 1,
+    username: "ramesh",
+    role: "patient"
+  });
   const [currentRole, setCurrentRole] = useState("patient");
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // Mobile defaults closed; desktop handles cleanly
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [lang, setLang] = useState("en");
   const [wsConnected, setWsConnected] = useState(false);
 
   // Modals & Sub-views
+  const [showLogin, setShowLogin] = useState(false);
   const [showConsent, setShowConsent] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [showScreening, setShowScreening] = useState(false);
@@ -179,6 +188,56 @@ export default function App() {
     };
   }, []);
 
+  // --- Role & Tab Switch Handlers ---
+  const handleSwitchRole = (newRole) => {
+    setCurrentRole(newRole);
+    if (newRole === "caregiver") {
+      setCurrentUser({ id: 2, username: "anita", role: "caregiver" });
+      setActiveTab("caregivers");
+      setActiveSession(false);
+    } else if (newRole === "physio") {
+      setCurrentUser({ id: 3, username: "dr_kavitha", role: "physio" });
+      setActiveTab("physio");
+      setActiveSession(false);
+    } else {
+      setCurrentUser({ id: 1, username: "ramesh", role: "patient" });
+      setActiveTab("dashboard");
+      setActiveSession(false);
+    }
+  };
+
+  const handleLoginSuccess = (userData, role) => {
+    const assignedRole = role || userData.role || "patient";
+    setCurrentUser(userData);
+    setCurrentRole(assignedRole);
+    setShowLogin(false);
+    if (assignedRole === "caregiver") {
+      setActiveTab("caregivers");
+    } else if (assignedRole === "physio") {
+      setActiveTab("physio");
+    } else {
+      setActiveTab("dashboard");
+    }
+    setActiveSession(false);
+  };
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    if (tab === "caregivers") {
+      setCurrentRole("caregiver");
+      setActiveSession(false);
+    } else if (tab === "physio") {
+      setCurrentRole("physio");
+      setActiveSession(false);
+    } else if (tab === "workouts") {
+      setActiveSession(false);
+    } else if (tab === "settings") {
+      setShowHardware(true);
+    } else if (tab === "dashboard" || tab === "telemetry" || tab === "ai_assistant" || tab === "activity" || tab === "nutrition" || tab === "sleep" || tab === "health" || tab === "progress") {
+      setActiveSession(false);
+    }
+  };
+
   // --- Actions ---
   const handleReportOk = async () => {
     try {
@@ -241,33 +300,51 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex bg-[#0c100d] text-slate-100 overflow-x-hidden">
-      {/* 1. Left Kinora Sidebar Navigation */}
+    <div className="min-h-screen flex bg-[#0c100d] text-slate-100 overflow-x-hidden relative">
+      {/* 1. Mobile Backdrop Overlay */}
       {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 lg:hidden transition-opacity"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* 2. Mobile Drawer Sidebar (Shown on mobile when sidebarOpen is true) */}
+      <div
+        className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out lg:hidden ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <Sidebar
           activeTab={activeTab}
-          onTabChange={(tab) => {
-            setActiveTab(tab);
-            if (tab === "caregivers") {
-              setCurrentRole("caregiver");
-              setActiveSession(false);
-            } else if (tab === "physio") {
-              setCurrentRole("physio");
-              setActiveSession(false);
-            } else if (tab === "workouts") {
-              setActiveSession(true);
-            } else if (tab === "settings") {
-              setShowHardware(true);
-            } else {
-              setCurrentRole("patient");
-              setActiveSession(false);
-            }
-          }}
+          onTabChange={handleTabChange}
           currentRole={currentRole}
-          onRoleChange={setCurrentRole}
+          onRoleChange={handleSwitchRole}
+          currentUser={currentUser}
+          onOpenLogin={() => {
+            setShowLogin(true);
+            setSidebarOpen(false);
+          }}
+          onCloseSidebar={() => setSidebarOpen(false)}
           streakDays={12}
           lang={lang}
         />
+      </div>
+
+      {/* 3. Desktop Static Sidebar */}
+      {desktopSidebarOpen && (
+        <div className="hidden lg:block shrink-0">
+          <Sidebar
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            currentRole={currentRole}
+            onRoleChange={handleSwitchRole}
+            currentUser={currentUser}
+            onOpenLogin={() => setShowLogin(true)}
+            streakDays={12}
+            lang={lang}
+          />
+        </div>
       )}
 
       {/* Main Container */}
@@ -275,6 +352,10 @@ export default function App() {
         {/* Top Header */}
         <TopHeader
           person={person}
+          currentUser={currentUser}
+          currentRole={currentRole}
+          onOpenLogin={() => setShowLogin(true)}
+          onSwitchRole={handleSwitchRole}
           onOpenHardware={() => setShowHardware(true)}
           onOpenReport={() => setShowReport(true)}
           onOpenScreening={() => setShowScreening(true)}
@@ -285,8 +366,15 @@ export default function App() {
           lang={lang}
           onLangToggle={() => setLang((prev) => (prev === "en" ? "ta" : "en"))}
           hardwareConnected={wsConnected}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => {
+            // If on mobile, toggle mobile drawer; if on desktop, toggle desktop sidebar
+            if (window.innerWidth < 1024) {
+              setSidebarOpen((prev) => !prev);
+            } else {
+              setDesktopSidebarOpen((prev) => !prev);
+            }
+          }}
+          sidebarOpen={desktopSidebarOpen}
         />
 
         {/* In-App Live Simulator Control Bar */}
@@ -302,142 +390,160 @@ export default function App() {
           lang={lang}
         />
 
-        {/* Main Body Content Based on Active Role */}
-        <main className="flex-1 p-5 sm:p-7 max-w-[1600px] w-full mx-auto">
-        {activeSession ? (
-          <MoveSafeSession
-            person={person}
-            plan={plan}
-            latestReading={latestReading}
-            onFinishSession={() => {
-              setActiveSession(false);
-              fetchPlan();
-            }}
-            onCancel={() => setActiveSession(false)}
-            lang={lang}
-          />
-        ) : activeTab === "telemetry" ? (
-          <RealTimeDataView
-            latestReading={latestReading}
-            readingHistory={readingHistory}
-            person={person}
-            onReportOk={handleReportOk}
-            lang={lang}
-          />
-        ) : activeTab === "ai_assistant" ? (
-          <AIAssistantView
-            person={person}
-            latestReading={latestReading}
-            plan={plan}
-            lang={lang}
-          />
-        ) : activeTab === "activity" ? (
-          <ActivityView
-            latestReading={latestReading}
-            lang={lang}
-          />
-        ) : activeTab === "workouts" ? (
-          <WorkoutsView
-            plan={plan}
-            onStartSession={() => setActiveSession(true)}
-            latestReading={latestReading}
-            lang={lang}
-          />
-        ) : activeTab === "nutrition" ? (
-          <VitalsHealthView
-            latestReading={latestReading}
-            lang={lang}
-          />
-        ) : activeTab === "sleep" ? (
-          <SleepRestView
-            lang={lang}
-          />
-        ) : activeTab === "health" ? (
-          <SentinelNodeView
-            latestReading={latestReading}
-            onOpenHardware={() => setShowHardware(true)}
-            lang={lang}
-          />
-        ) : activeTab === "progress" ? (
-          <ProgressView
-            person={person}
-            onOpenReport={() => setShowReport(true)}
-            onOpenScreening={() => setShowScreening(true)}
-            lang={lang}
-          />
-        ) : activeTab === "caregivers" ? (
-          <CaregiverView
-            person={person}
-            latestReading={latestReading}
-            alerts={alerts}
-            onAckAlert={handleAckAlert}
-            lang={lang}
-          />
-        ) : activeTab === "physio" ? (
-          <PhysioView
-            plan={plan}
-            onSavePlan={handleSavePlan}
-            lang={lang}
-          />
-        ) : activeTab === "settings" ? (
-          <SettingsView
-            person={person}
-            lang={lang}
-            onLangToggle={() => setLang((prev) => (prev === "en" ? "ta" : "en"))}
-            onOpenHardware={() => setShowHardware(true)}
-          />
-        ) : (
-          <PatientView
-            person={person}
-            latestReading={latestReading}
-            readingHistory={readingHistory}
-            plan={plan}
-            alerts={alerts}
-            onStartSession={() => setActiveSession(true)}
-            onReportOk={handleReportOk}
-            onTriggerPrompt={handleTriggerPrompt}
-            onRefreshPlan={fetchPlan}
-            onOpenTelemetry={() => {
-              setActiveTab("telemetry");
-              setActiveSession(false);
-            }}
-            lang={lang}
-          />
-        )}
-      </main>
+        {/* Main Body Content Based on Active Tab / Role */}
+        <main className="flex-1 p-3 sm:p-5 lg:p-7 max-w-[1600px] w-full mx-auto pb-24 lg:pb-8">
+          {activeSession ? (
+            <MoveSafeSession
+              person={person}
+              plan={plan}
+              latestReading={latestReading}
+              onFinishSession={() => {
+                setActiveSession(false);
+                fetchPlan();
+              }}
+              onCancel={() => setActiveSession(false)}
+              lang={lang}
+            />
+          ) : activeTab === "telemetry" ? (
+            <RealTimeDataView
+              latestReading={latestReading}
+              readingHistory={readingHistory}
+              person={person}
+              onReportOk={handleReportOk}
+              lang={lang}
+            />
+          ) : activeTab === "ai_assistant" ? (
+            <AIAssistantView
+              person={person}
+              latestReading={latestReading}
+              plan={plan}
+              lang={lang}
+            />
+          ) : activeTab === "activity" ? (
+            <ActivityView
+              latestReading={latestReading}
+              lang={lang}
+            />
+          ) : activeTab === "workouts" ? (
+            <WorkoutsView
+              plan={plan}
+              onStartSession={() => setActiveSession(true)}
+              latestReading={latestReading}
+              lang={lang}
+            />
+          ) : activeTab === "nutrition" ? (
+            <VitalsHealthView
+              latestReading={latestReading}
+              lang={lang}
+            />
+          ) : activeTab === "sleep" ? (
+            <SleepRestView
+              lang={lang}
+            />
+          ) : activeTab === "health" ? (
+            <SentinelNodeView
+              latestReading={latestReading}
+              onOpenHardware={() => setShowHardware(true)}
+              lang={lang}
+            />
+          ) : activeTab === "progress" ? (
+            <ProgressView
+              person={person}
+              onOpenReport={() => setShowReport(true)}
+              onOpenScreening={() => setShowScreening(true)}
+              lang={lang}
+            />
+          ) : activeTab === "caregivers" ? (
+            <CaregiverView
+              person={person}
+              latestReading={latestReading}
+              alerts={alerts}
+              onAckAlert={handleAckAlert}
+              lang={lang}
+            />
+          ) : activeTab === "physio" ? (
+            <PhysioView
+              plan={plan}
+              onSavePlan={handleSavePlan}
+              lang={lang}
+            />
+          ) : activeTab === "settings" ? (
+            <SettingsView
+              person={person}
+              lang={lang}
+              onLangToggle={() => setLang((prev) => (prev === "en" ? "ta" : "en"))}
+              onOpenHardware={() => setShowHardware(true)}
+            />
+          ) : (
+            <PatientView
+              person={person}
+              latestReading={latestReading}
+              readingHistory={readingHistory}
+              plan={plan}
+              alerts={alerts}
+              onStartSession={() => setActiveSession(true)}
+              onReportOk={handleReportOk}
+              onTriggerPrompt={handleTriggerPrompt}
+              onRefreshPlan={fetchPlan}
+              onOpenTelemetry={() => {
+                setActiveTab("telemetry");
+                setActiveSession(false);
+              }}
+              lang={lang}
+            />
+          )}
+        </main>
 
-      {/* 5. Weekly Clinical Report Modal */}
-      <WeeklyReportModal
-        isOpen={showReport}
-        onClose={() => setShowReport(false)}
-        person={person}
-        lang={lang}
-      />
+        {/* 4. Mobile Bottom Navigation Bar (Visible only on mobile screens < lg) */}
+        <MobileBottomNav
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          currentRole={currentRole}
+          onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+          lang={lang}
+        />
 
-      {/* 6. Consent Dialog (Privacy Shield) */}
-      <ConsentModal
-        isOpen={showConsent}
-        onAgree={handleConsentAgree}
-        lang={lang}
-      />
+        {/* 5. Dedicated Multi-Role Login Modal */}
+        <LoginModal
+          isOpen={showLogin}
+          onClose={() => setShowLogin(false)}
+          onLoginSuccess={handleLoginSuccess}
+          currentUser={currentUser}
+          lang={lang}
+        />
 
-      {/* 7. Clinical Screening Tests (CDC STEADI: 30s Chair Stand & TUG) */}
-      <ScreeningTestsModal
-        isOpen={showScreening}
-        onClose={() => setShowScreening(false)}
-        person={person}
-        lang={lang}
-      />
+        {/* 6. Weekly Clinical Report Modal */}
+        <WeeklyReportModal
+          isOpen={showReport}
+          onClose={() => setShowReport(false)}
+          person={person}
+          lang={lang}
+        />
 
-      {/* 8. Live Hardware Serial Link Manager */}
-      <HardwareModal
-        isOpen={showHardware}
-        onClose={() => setShowHardware(false)}
-        lang={lang}
-      />
+        {/* 7. Consent Dialog (Privacy Shield) */}
+        <ConsentModal
+          isOpen={showConsent}
+          onAgree={handleConsentAgree}
+          lang={lang}
+        />
+
+        {/* 8. Clinical Screening Tests (CDC STEADI: 30s Chair Stand & TUG) */}
+        <ScreeningTestsModal
+          isOpen={showScreening}
+          onClose={() => setShowScreening(false)}
+          person={person}
+          lang={lang}
+        />
+
+        {/* 9. Live Hardware Serial Link Manager */}
+        <HardwareModal
+          isOpen={showHardware}
+          onClose={() => setShowHardware(false)}
+          lang={lang}
+        />
 
         {/* Footer */}
-        <footer className="py-4 text-center text-xs text-[#4b5563] border-t border-[#18201a]">
+        <footer className="py-4 text-center text-xs text-[#4b5563] border-t border-[#18201a] mb-14 lg:mb-0">
           ReBuild4 Unified Platform • Team Preva
         </footer>
       </div>

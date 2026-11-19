@@ -8,13 +8,14 @@ import {
   Moon,
   HeartPulse,
   TrendingUp,
-  Users,
   Settings,
   Flame,
   LogOut,
   Stethoscope,
   ShieldCheck,
-  Radio
+  Radio,
+  X,
+  UserCheck
 } from "lucide-react";
 
 export default function Sidebar({
@@ -22,6 +23,9 @@ export default function Sidebar({
   onTabChange,
   currentRole,
   onRoleChange,
+  currentUser,
+  onOpenLogin,
+  onCloseSidebar,
   streakDays = 12,
   lang = "en"
 }) {
@@ -42,10 +46,23 @@ export default function Sidebar({
 
   const days = ["M", "T", "W", "T", "F", "S", "S"];
 
+  const handleTabClick = (tabId) => {
+    onTabChange(tabId);
+    if (onCloseSidebar) {
+      onCloseSidebar();
+    }
+  };
+
+  const getRoleDisplayName = () => {
+    if (currentRole === "caregiver") return lang === "ta" ? "பராமரிப்பாளர்" : "Caretaker / Caregiver";
+    if (currentRole === "physio") return lang === "ta" ? "மருத்துவர் / பிசியோ" : "Doctor / Physiotherapist";
+    return lang === "ta" ? "பயனாளி / நோயாளி" : "User / Patient";
+  };
+
   return (
-    <aside className="w-64 bg-[#111613] border-r border-[#1e2721] flex flex-col justify-between shrink-0 select-none min-h-screen">
+    <aside className="w-64 bg-[#111613] border-r border-[#1e2721] flex flex-col justify-between shrink-0 select-none h-full min-h-screen">
       {/* Brand Logo Header */}
-      <div className="p-5 pb-4">
+      <div className="p-5 pb-4 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-[#84cc16] flex items-center justify-center text-black font-black shadow-[0_0_15px_rgba(132,204,22,0.4)]">
             <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
@@ -62,6 +79,16 @@ export default function Sidebar({
             <p className="text-[9px] text-[#6b7280] font-medium tracking-wide">HEALTH INTELLIGENCE</p>
           </div>
         </div>
+
+        {/* Mobile Close Button (Visible on screens < lg) */}
+        {onCloseSidebar && (
+          <button
+            onClick={onCloseSidebar}
+            className="lg:hidden p-1.5 rounded-lg bg-[#18201a] text-[#9ca3af] hover:text-white border border-[#27352b] cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Navigation List */}
@@ -72,11 +99,12 @@ export default function Sidebar({
           return (
             <button
               key={item.id}
-              onClick={() => onTabChange(item.id)}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${isActive
+              onClick={() => handleTabClick(item.id)}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer min-h-[42px] ${
+                isActive
                   ? "bg-[#84cc16] text-[#0f1411] shadow-[0_0_20px_rgba(132,204,22,0.35)] font-bold scale-[1.02]"
                   : "text-[#9ca3af] hover:text-white hover:bg-[#18201a]"
-                }`}
+              }`}
             >
               <Icon className={`w-4 h-4 ${isActive ? "text-[#0f1411]" : "text-[#9ca3af]"}`} />
               <span className="tracking-wide">{item.label}</span>
@@ -85,10 +113,10 @@ export default function Sidebar({
         })}
       </div>
 
-      {/* Bottom Section: Streak Card & Logout */}
+      {/* Bottom Section: Streak Card & Account Role Card */}
       <div className="p-4 space-y-3 border-t border-[#1e2721] bg-[#0d120f]">
         {/* Current Streak Card */}
-        <div className="bg-[#151c17] border border-[#222e26] rounded-2xl p-3.5 shadow-lg space-y-2">
+        <div className="bg-[#151c17] border border-[#222e26] rounded-2xl p-3 shadow-lg space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-[#9ca3af] text-[11px] font-medium">
               {lang === "ta" ? "தற்போதைய தொடர்ச்சி" : "Current Streak"}
@@ -111,20 +139,38 @@ export default function Sidebar({
               <div key={i} className="flex flex-col items-center gap-1">
                 <span className="text-[9px] text-[#6b7280] font-mono">{d}</span>
                 <span
-                  className={`w-1.5 h-1.5 rounded-full ${i <= 4 ? "bg-[#84cc16] shadow-[0_0_6px_#84cc16]" : "bg-[#27352b]"
-                    }`}
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    i <= 4 ? "bg-[#84cc16] shadow-[0_0_6px_#84cc16]" : "bg-[#27352b]"
+                  }`}
                 />
               </div>
             ))}
           </div>
         </div>
 
-        {/* Role Quick Toggle */}
-        <div className="flex items-center justify-between pt-1 text-[11px] text-[#9ca3af]">
-          <span className="capitalize">{currentRole}</span>
-          <span className="text-[10px] bg-[#1d2620] px-2 py-0.5 rounded text-[#a3e635] border border-[#27352b]">
-            v2.4
-          </span>
+        {/* Active Role & Switch Button */}
+        <div className="bg-[#151c17] border border-[#222e26] rounded-xl p-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <div className="w-6 h-6 rounded-lg bg-[#84cc16]/10 border border-[#84cc16]/30 flex items-center justify-center text-[#84cc16] shrink-0">
+              <UserCheck className="w-3.5 h-3.5" />
+            </div>
+            <div className="truncate">
+              <span className="text-[11px] font-bold text-white block truncate leading-tight">
+                {getRoleDisplayName()}
+              </span>
+              <span className="text-[9px] text-[#9ca3af] block font-mono">
+                @{currentUser?.username || "ramesh"}
+              </span>
+            </div>
+          </div>
+
+          <button
+            onClick={onOpenLogin}
+            className="p-1.5 rounded-lg bg-[#1e2720] hover:bg-[#84cc16] text-[#9ca3af] hover:text-[#0c100d] border border-[#27352b] transition-all cursor-pointer shrink-0"
+            title="Switch User Role / Log In"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
     </aside>

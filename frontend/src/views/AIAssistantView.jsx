@@ -128,7 +128,7 @@ export default function AIAssistantView({ person, latestReading, plan, lang = "e
         loraMeta: {
           adapter_id: "LoRA-Geriatric-Knee-Autonomic-v1.4",
           rank: 8,
-          model_name: "ReBuild4-LoRA-Engine (Local Rank-Adapted)",
+          model_name: "Google Gemini Clinical LoRA AI",
           safety_guardrails_passed: true
         }
       };

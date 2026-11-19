@@ -486,6 +486,59 @@ def read_root():
         "disclaimer": "Assistive and screening tool, not a diagnostic system or a substitute for professional care."
     }
 
+# --- Authentication & Multi-Role Support ---
+@app.post("/api/auth/login", response_model=UserOut)
+def login(payload: UserLogin, db: Session = Depends(get_db)):
+    """
+    Authenticate user by username or phone and PIN.
+    Supports Patient, Caregiver, and Physiotherapist roles.
+    """
+    user = db.query(User).filter(
+        (User.username == payload.username_or_phone) |
+        (User.email_or_phone == payload.username_or_phone)
+    ).first()
+    if not user or user.pin_hash != payload.pin:
+        raise HTTPException(status_code=401, detail="Invalid username or PIN code.")
+    return user
+
+@app.get("/api/auth/roles")
+def get_auth_roles():
+    """
+    Returns available role profiles with preconfigured demo credentials.
+    """
+    return [
+        {
+            "role": "patient",
+            "name": "Ramesh Kumar",
+            "label": "User / Patient",
+            "username": "ramesh",
+            "pin": "1234",
+            "badge": "Patient Portal",
+            "avatar": "RK",
+            "description": "Daily vitals, AI assistant, rehabilitation exercises & personal recovery tracking."
+        },
+        {
+            "role": "caregiver",
+            "name": "Anita (Daughter)",
+            "label": "Caretaker / Caregiver",
+            "username": "anita",
+            "pin": "1234",
+            "badge": "Caregiver Hub",
+            "avatar": "AK",
+            "description": "Real-time safety alerts, fall notifications, remote status & emergency escalations."
+        },
+        {
+            "role": "physio",
+            "name": "Dr. Kavitha PT",
+            "label": "Doctor / Physiotherapist",
+            "username": "dr_kavitha",
+            "pin": "1234",
+            "badge": "Clinical Practice",
+            "avatar": "DK",
+            "description": "Prescribe exercises, adjust target angles/reps, review biomechanics & clinical reports."
+        }
+    ]
+
 # --- Persons & Consent ---
 @app.get("/api/persons", response_model=List[PersonOut])
 def get_persons(db: Session = Depends(get_db)):
