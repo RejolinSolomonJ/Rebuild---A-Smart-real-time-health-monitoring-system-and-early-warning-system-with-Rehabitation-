@@ -16,7 +16,8 @@ import {
   ShieldCheck,
   Stethoscope,
   Check,
-  Heart
+  Heart,
+  Activity
 } from "lucide-react";
 
 export default function TopHeader({
@@ -121,6 +122,16 @@ export default function TopHeader({
         >
           <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500 animate-pulse" />
           <span>{latestReading?.hr_ok && latestReading?.hr > 0 ? `${latestReading.hr} BPM` : "74 BPM"}</span>
+        </button>
+
+        {/* Real-Time Live SpO2 Badge */}
+        <button
+          onClick={onOpenTelemetry}
+          className="hidden xs:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 text-xs font-bold font-mono transition-all cursor-pointer shrink-0"
+          title="Pulse Oximetry Live Telemetry (SpO2 %)"
+        >
+          <Activity className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+          <span>{latestReading?.spo2 ? `${Math.round(latestReading.spo2)}%` : "98%"} SpO2</span>
         </button>
 
         {/* Real-Time Telemetry Quick Action */}

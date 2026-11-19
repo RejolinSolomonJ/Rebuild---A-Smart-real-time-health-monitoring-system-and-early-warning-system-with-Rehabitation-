@@ -80,6 +80,31 @@ export default function RealTimeDataView({
       },
       description: "Monitors autonomic cardiac tone, detecting resting drift, exercise spikes, and bradycardia."
     },
+    spo2: {
+      id: "spo2",
+      name: lang === "ta" ? "இரத்த ஆக்சிஜன் அளவு (SpO2 %)" : "Blood Oxygen Saturation (SpO2 %)",
+      shortName: "SpO2 (O2%)",
+      unit: "%",
+      sensorModel: "Photoplethysmographic Pulse Oximetry (Red 660nm / IR 940nm / PPG)",
+      arduinoPin: "Optical PPG Channel / I2C Bus",
+      operatingVoltage: "3.3V - 5V DC",
+      sampleRate: "100 Hz internal DSP, 1 Hz telemetry broadcast",
+      color: "#06b6d4",
+      glowColor: "rgba(6, 182, 212, 0.4)",
+      minSafe: 95,
+      maxSafe: 100,
+      baselineVal: 98,
+      icon: Activity,
+      getValue: (r) => (typeof r?.spo2 === "number" ? r.spo2 : Number(r?.spo2) || 98.0),
+      formatDisplay: (r) => {
+        const val = typeof r?.spo2 === "number" ? r.spo2 : Number(r?.spo2) || 98.0;
+        let status = "normal";
+        if (val < 90) status = "critical";
+        else if (val < 95) status = "low";
+        return { val: `${Math.round(val)}%`, status };
+      },
+      description: "Monitors peripheral capillary oxygen saturation (SpO2) to safeguard respiratory reserves and screen for exertion-induced hypoxemia during mobility rehabilitation."
+    },
     temp: {
       id: "temp",
       name: lang === "ta" ? "உடல் வெப்பநிலை (°C)" : "Core Body Temperature (°C)",
@@ -663,7 +688,7 @@ export default function RealTimeDataView({
         <span className="text-xs font-bold text-[#9ca3af] uppercase tracking-wider block">
           {lang === "ta" ? "மற்ற சென்சார்களுக்கு உடனடியாக மாறவும்:" : "Quick Switch to Another Sensor Channel:"}
         </span>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2.5">
           {Object.values(sensorDefinitions).map((s) => {
             const SIcon = s.icon;
             const isSelected = selectedSensor === s.id;

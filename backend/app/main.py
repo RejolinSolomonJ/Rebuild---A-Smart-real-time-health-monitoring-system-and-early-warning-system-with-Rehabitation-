@@ -258,7 +258,8 @@ async def ingest_reading_async(data: Dict[str, Any], db: Optional[Session] = Non
             system_state = "S_NORMAL"
 
         humidity_val = float(data.get("humidity", 52.0))
-        raw_serial = f"T={data.get('temp', 36.6):.1f},H={humidity_val:.1f},HR={data.get('hr', 72)},HR_OK={1 if data.get('hr_ok', True) else 0},MOT={data.get('motion', 0)},IDLE={data.get('idle_s', 0)},VIB={data.get('vib', 0)},IMP={data.get('impact', 0)},STATE={system_state}"
+        spo2_val = float(data.get("spo2", 98.0))
+        raw_serial = f"T={data.get('temp', 36.6):.1f},H={humidity_val:.1f},HR={data.get('hr', 72)},SPO2={spo2_val:.0f},HR_OK={1 if data.get('hr_ok', True) else 0},MOT={data.get('motion', 0)},IDLE={data.get('idle_s', 0)},VIB={data.get('vib', 0)},IMP={data.get('impact', 0)},STATE={system_state}"
 
         # 6. Save Reading
         db_reading = Reading(
@@ -266,6 +267,7 @@ async def ingest_reading_async(data: Dict[str, Any], db: Optional[Session] = Non
             t=data.get("t", 0),
             hr=data.get("hr", 72),
             hr_ok=data.get("hr_ok", True),
+            spo2=spo2_val,
             temp=data.get("temp", 36.6),
             humidity=humidity_val,
             motion=data.get("motion", 0),
@@ -292,6 +294,7 @@ async def ingest_reading_async(data: Dict[str, Any], db: Optional[Session] = Non
                 "timestamp": db_reading.timestamp.isoformat(),
                 "hr": db_reading.hr,
                 "hr_ok": db_reading.hr_ok,
+                "spo2": round(db_reading.spo2 if db_reading.spo2 is not None else 98.0, 1),
                 "temp": db_reading.temp,
                 "humidity": db_reading.humidity,
                 "motion": db_reading.motion,
@@ -344,12 +347,14 @@ async def continuous_telemetry_loop():
             # Physiological heart rate modulation (respiratory sinus rhythm 72-76 BPM)
             hr_var = int(2.0 * math.sin(step * 0.25) + 0.5)
             live_hr = 74 + hr_var
+            live_spo2 = round(98.0 + 0.3 * math.sin(step * 0.1), 1)
             now_ms = int(time.time() * 1000)
 
             reading_dict = {
                 "t": now_ms,
                 "hr": live_hr,
                 "hr_ok": True,
+                "spo2": live_spo2,
                 "temp": 36.6 + round(0.1 * math.sin(step * 0.05), 1),
                 "humidity": 52.0 + round(0.4 * math.cos(step * 0.05), 1),
                 "motion": 1 if step % 8 == 0 else 0,

@@ -17,6 +17,7 @@ export default function VitalsHealthView({ latestReading, lang = "en" }) {
   const hrConnected = latestReading?.hr_ok && (latestReading?.hr || 0) > 0;
   const temp = latestReading?.temp || 36.6;
   const humidity = latestReading?.humidity || 52.0;
+  const spo2 = latestReading?.spo2 || 98.0;
   const idle = latestReading?.idle_s || 0;
   const vib = latestReading?.vib || 0;
   const risk = latestReading?.risk_score || 8;
@@ -48,8 +49,8 @@ export default function VitalsHealthView({ latestReading, lang = "en" }) {
         </div>
       </div>
 
-      {/* 4 Sensor Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 5 Sensor Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
         {/* Heart Rate */}
         <div className="bg-[#151c17] border border-[#222e26] rounded-2xl p-5 space-y-3">
           <div className="flex items-center justify-between">
@@ -86,6 +87,30 @@ export default function VitalsHealthView({ latestReading, lang = "en" }) {
           <div className="text-[11px] text-[#6b7280] border-t border-[#1e2721] pt-2 flex items-center justify-between">
             <span>Resting baseline: 72 ± 6 BPM</span>
             <span className="text-[#a3e635] font-mono">Ceiling: 125 BPM</span>
+          </div>
+        </div>
+
+        {/* SpO2 Blood Oxygen Saturation */}
+        <div className="bg-[#151c17] border border-[#222e26] rounded-2xl p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-[#9ca3af] font-medium">Blood Oxygen (SpO2)</span>
+            <Activity className="w-4 h-4 text-cyan-400" />
+          </div>
+
+          <div className="space-y-1">
+            <div className="text-3xl font-black text-white flex items-baseline gap-1.5">
+              <span>{Math.round(spo2)}</span>
+              <span className="text-xs font-normal text-[#9ca3af]">%</span>
+            </div>
+            <div className="text-[11px] text-cyan-400 font-semibold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              <span>Optimal Oxygenation (Normal)</span>
+            </div>
+          </div>
+
+          <div className="text-[11px] text-[#6b7280] border-t border-[#1e2721] pt-2 flex items-center justify-between">
+            <span>Safe: 95% - 100%</span>
+            <span className="text-amber-400 font-mono">Alert: &lt; 94%</span>
           </div>
         </div>
 

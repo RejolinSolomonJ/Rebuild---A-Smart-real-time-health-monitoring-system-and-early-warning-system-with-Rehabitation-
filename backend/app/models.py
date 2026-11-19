@@ -70,6 +70,7 @@ class Reading(Base):
     hr_ok = Column(Boolean)         # Valid beat flag
     temp = Column(Float)            # Body temperature Celsius
     humidity = Column(Float, default=52.0) # Relative humidity percentage (DHT22)
+    spo2 = Column(Float, default=98.0) # Blood oxygen saturation percentage (SpO2)
     motion = Column(Integer)        # PIR motion in last sec (1 or 0)
     idle_s = Column(Integer)        # Inactivity duration in seconds
     vib = Column(Integer)           # Vibration pulses per sec

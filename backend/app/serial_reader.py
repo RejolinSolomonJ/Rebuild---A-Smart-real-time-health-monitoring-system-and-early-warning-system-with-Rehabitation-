@@ -159,6 +159,15 @@ class SerialIngestionWorker:
                 hr_ok_raw = kv.get("HR_OK", "1" if hr_raw > 0 else "0")
                 hr_ok_bool = bool(int(float(hr_ok_raw))) and (hr_raw > 0)
 
+                # SpO2 parsing with safe default
+                raw_spo2 = kv.get("SPO2", kv.get("O2", "98.0"))
+                try:
+                    spo2_val = float(raw_spo2)
+                    if math.isnan(spo2_val) or math.isinf(spo2_val) or spo2_val <= 0:
+                        spo2_val = 98.0
+                except (ValueError, TypeError):
+                    spo2_val = 98.0
+
                 # Motion: support both MOTION= and MOT=
                 motion_raw = kv.get("MOTION", kv.get("MOT", 0))
                 try:
@@ -206,6 +215,7 @@ class SerialIngestionWorker:
                     "t": int(time.time() * 1000),
                     "temp": temp_val,
                     "humidity": hum_val,
+                    "spo2": spo2_val,
                     "hr": hr_raw if hr_ok_bool else 0,
                     "hr_ok": hr_ok_bool,
                     "motion": motion_val,

@@ -58,6 +58,7 @@ class ReadingIn(BaseModel):
     hr_ok: bool = Field(default=True, description="Beat valid flag")
     temp: float = Field(default=36.6, description="Core temperature in Celsius")
     humidity: float = Field(default=52.0, description="Ambient relative humidity percentage")
+    spo2: float = Field(default=98.0, description="Blood oxygen saturation percentage (SpO2)")
     motion: int = Field(default=1, description="PIR motion latch (1 or 0)")
     idle_s: int = Field(default=0, description="Seconds since last motion")
     vib: int = Field(default=0, description="Vibration pulses in last second")

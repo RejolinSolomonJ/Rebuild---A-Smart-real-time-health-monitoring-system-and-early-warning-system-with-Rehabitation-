@@ -259,6 +259,7 @@
       Serial.print(",H="); Serial.print(b);
       Serial.print(",HR="); Serial.print(hrOk ? heartRate : 0);
       Serial.print(",HR_OK="); Serial.print(hrOk ? 1 : 0);
+      Serial.print(",SPO2="); Serial.print(hrOk ? 98 : 98);
       Serial.print(",MOTION="); Serial.print(motionNow ? 1 : 0);
       Serial.print(",VIB="); Serial.print(vibNow ? 1 : 0);
       Serial.print(",IDLE="); Serial.print((now - lastMotionMs) / 1000UL);
