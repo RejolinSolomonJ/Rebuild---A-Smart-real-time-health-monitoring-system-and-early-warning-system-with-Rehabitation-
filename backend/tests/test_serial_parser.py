@@ -70,3 +70,12 @@ def test_sentinel_lcdac_key_value_parsing():
     assert data_nan["temp"] == 36.6  # Safe fallback
     assert data_nan["humidity"] == 52.0  # Safe fallback
     assert data_nan["motion"] == 0
+
+    # Pulse sensor A0 active reading
+    line_pulse = "T=36.7,H=55.0,HR=78,HR_OK=1,MOTION=1,VIB=0,IDLE=0,STATE=NORMAL"
+    data_pulse = worker.process_raw_line(line_pulse)
+    assert data_pulse is not None
+    assert data_pulse["temp"] == 36.7
+    assert data_pulse["hr"] == 78
+    assert data_pulse["hr_ok"] is True
+    assert data_pulse["low_signal"] is False

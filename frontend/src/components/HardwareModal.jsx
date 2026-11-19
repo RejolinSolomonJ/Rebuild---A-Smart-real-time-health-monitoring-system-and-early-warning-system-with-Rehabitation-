@@ -246,6 +246,39 @@ export default function HardwareModal({ isOpen, onClose, lang = "en" }) {
                 </div>
               )}
             </div>
+
+            {/* Hardware Circuit Pinout Card (From ATmega328P Circuit Diagram) */}
+            <div className="pt-2 border-t border-slate-800">
+              <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider block mb-2">
+                Circuit Pin Mapping (PEC / Atal Incubation Centre Board):
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[10px] font-mono">
+                <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                  <span className="text-purple-400 font-bold block">A0 (Pin 23)</span>
+                  <span className="text-slate-300">Pulse Sensor S (Heart Rate)</span>
+                </div>
+                <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                  <span className="text-amber-400 font-bold block">A1 (Pin 24)</span>
+                  <span className="text-slate-300">DHT22 DATA (Temp & Hum)</span>
+                </div>
+                <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                  <span className="text-cyan-400 font-bold block">A2 (Pin 25)</span>
+                  <span className="text-slate-300">IR Module OUT (PIR Motion)</span>
+                </div>
+                <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                  <span className="text-emerald-400 font-bold block">A3 (Pin 26)</span>
+                  <span className="text-slate-300">SW-420 DO (Fall Detect)</span>
+                </div>
+                <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                  <span className="text-rose-400 font-bold block">A4 (Pin 27)</span>
+                  <span className="text-slate-300">Buzzer (via 1k + NPN Q1)</span>
+                </div>
+                <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                  <span className="text-[#a3e635] font-bold block">5V / GND</span>
+                  <span className="text-slate-300">Shared Breadboard Rails</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Step-by-Step Instructions */}

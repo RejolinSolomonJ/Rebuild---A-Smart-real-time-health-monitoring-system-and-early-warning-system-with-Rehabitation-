@@ -1,26 +1,26 @@
   /*
     Sentinel - Real-Time Health Monitoring and Early Warning System
-    Version without heart-rate sensor. Everything is shown on the on-board 16x2 LCD.
+    Board: PEC / Atal Incubation Centre ATmega328P Development Board (16 MHz) + 16x2 LCD
+    All logic and power at 5 V.
 
-    Sensors : DHT22 (temperature + humidity), IR module (motion/presence),
-              SW-420 (vibration/impact), buzzer (alerts)
+    Sensors & Pin Map (matches circuit diagram):
+              A0 = Pulse sensor S (analog, XD-58C or PulseSensor)
+              A1 = DHT22 (AM2302) DATA (temperature + humidity)
+              A2 = IR module OUT (motion/presence detection)
+              A3 = SW-420 DO (vibration/impact fall detect)
+              A4 = Buzzer driver via 1k resistor + Q1 NPN (BC547/2N2222) with 1N4148 flyback
+              Shared Rails: 5V Rail & GND Rail
+              USB (D0/D1): Serial to gateway (9600 Baud)
+
     Libraries to install (Sketch > Include Library > Manage Libraries):
               "DHT sensor library" by Adafruit  (also install "Adafruit Unified Sensor")
               LiquidCrystal is already built into the Arduino IDE.
-
-    Wiring (see circuit diagram):
-              A1 = DHT22 DATA      A2 = IR module OUT
-              A3 = SW-420 DO       A4 = buzzer transistor base (through 1k)
-              A0 = reserved for the heart-rate sensor later
   */
 
   #include <LiquidCrystal.h>
   #include <DHT.h>
 
   // ================= 1. LCD PINS: CHANGE TO MATCH YOUR BOARD =================
-  // These are the standard Arduino example pins. Your board's LCD may be wired
-  // differently. If the LCD stays blank or shows boxes, fix these six numbers
-  // (see "If the LCD does not work" in the step-by-step guide).
   const uint8_t LCD_RS = 8;
   const uint8_t LCD_EN = 9;
   const uint8_t LCD_D4 = 4;
@@ -29,15 +29,15 @@
   const uint8_t LCD_D7 = 7;
   LiquidCrystal lcd(LCD_RS, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 
-  // ================= 2. SENSOR PINS =================
-  #define DHT_PIN   A1
-  #define IR_PIN    A2
-  #define VIB_PIN   A3
-  #define BUZZ_PIN  A4
+  // ================= 2. SENSOR PINS (MATCHES CIRCUIT DIAGRAM) =================
+  #define PULSE_PIN A0   // A0/PC0 (pin 23) - Pulse sensor S (analog)
+  #define DHT_PIN   A1   // A1/PC1 (pin 24) - DHT22 DATA (temperature + humidity)
+  #define IR_PIN    A2   // A2/PC2 (pin 25) - IR sensor module OUT (motion/presence)
+  #define VIB_PIN   A3   // A3/PC3 (pin 26) - SW-420 DO (impact/shake fall detect)
+  #define BUZZ_PIN  A4   // A4/PC4 (pin 27) - Buzzer driver (via 1k + NPN Q1)
   DHT dht(DHT_PIN, DHT22);
 
   // Most IR obstacle modules give LOW when something is detected.
-  // If your module is the opposite, change to false.
   const bool IR_ACTIVE_LOW = true;
   // Most SW-420 modules give HIGH when vibration is detected. Change if opposite.
   const bool VIB_ACTIVE_HIGH = true;
@@ -61,6 +61,13 @@
   uint8_t winEdges = 0;
   bool fallSuspect = false, fallAlarm = false;
   unsigned long fallStart = 0;
+
+  // Pulse Sensor State (A0)
+  int heartRate = 0;
+  bool hrOk = false;
+  unsigned long lastBeatMs = 0;
+  int pulseThreshold = 520;
+  bool pulsePeak = false;
 
   // ---------- helpers ----------
   void printLine(uint8_t row, const char *text) {
@@ -104,6 +111,7 @@
     digitalWrite(BUZZ_PIN, LOW);
     pinMode(IR_PIN, INPUT);
     pinMode(VIB_PIN, INPUT);
+    pinMode(PULSE_PIN, INPUT);
 
     Serial.begin(9600);
     dht.begin();
@@ -117,18 +125,38 @@
 
     lastMotionMs = millis();
     winStart = millis();
+    lastBeatMs = millis();
   }
 
   // ---------- main loop ----------
   void loop() {
     unsigned long now = millis();
 
-    // --- IR motion ---
+    // --- Pulse Sensor (A0 analog signal) ---
+    int pulseRaw = analogRead(PULSE_PIN);
+    if (pulseRaw > pulseThreshold && !pulsePeak) {
+      pulsePeak = true;
+      unsigned long delta = now - lastBeatMs;
+      if (delta > 350 && delta < 2000) { // Valid 30 - 170 BPM physiological window
+        heartRate = (int)(60000UL / delta);
+        hrOk = true;
+        lastBeatMs = now;
+      }
+    } else if (pulseRaw < (pulseThreshold - 25)) {
+      pulsePeak = false;
+    }
+
+    // Timeout: if no heartbeat or raw signal out of bounds (unconnected pin / floating)
+    if (now - lastBeatMs > 3500UL || pulseRaw < 60 || pulseRaw > 990) {
+      hrOk = false;
+    }
+
+    // --- IR motion (A2) ---
     int irRaw = digitalRead(IR_PIN);
     motionNow = IR_ACTIVE_LOW ? (irRaw == LOW) : (irRaw == HIGH);
     if (motionNow) lastMotionMs = now;
 
-    // --- vibration (count rising edges, detect impact bursts) ---
+    // --- Vibration (A3 - count rising edges, detect impact bursts) ---
     int vRaw = digitalRead(VIB_PIN);
     bool v = VIB_ACTIVE_HIGH ? (vRaw == HIGH) : (vRaw == LOW);
     if (now - winStart > 1000UL) { winStart = now; winEdges = 0; }
@@ -144,7 +172,7 @@
     lastVib = v;
     vibNow = (now - lastVibMs < 1500UL) && (vibCount > 0);   // keep "YES" on screen for 1.5 s
 
-    // --- fall logic: impact, then no movement = alarm; movement cancels ---
+    // --- Fall logic: impact, then no movement = alarm; movement cancels ---
     if (fallSuspect) {
       if (now - fallStart > FALL_GRACE_MS && motionNow) {
         fallSuspect = false;
@@ -154,7 +182,7 @@
       }
     }
 
-    // --- DHT22 every 2 s ---
+    // --- DHT22 every 2 s (A1) ---
     if (now - lastDhtMs >= 2000UL) {
       lastDhtMs = now;
       float t = dht.readTemperature();
@@ -165,10 +193,10 @@
 
     State st = currentState(now);
 
-    // --- buzzer patterns ---
+    // --- Buzzer patterns (A4) ---
     switch (st) {
-      case S_FALL_ALARM: beepPattern(100, 200);  break;   // fast continuous
-      case S_FALL_CHECK: beepPattern(100, 1000); break;   // one beep per second
+      case S_FALL_ALARM: beepPattern(100, 200);  break;   // fast continuous siren
+      case S_FALL_CHECK: beepPattern(100, 1000); break;   // one beep per second countdown
       case S_HIGH_TEMP:  beepPattern(300, 1000); break;
       case S_INACTIVE:   beepPattern(100, 3000); break;   // soft reminder
       default:           digitalWrite(BUZZ_PIN, LOW);
@@ -210,20 +238,27 @@
           snprintf(l2, sizeof(l2), "Vib count: %lu", vibCount);
           printLine(1, l2);
         } else {
-          printLine(0, "HR: not fitted");
+          if (hrOk && heartRate > 0) {
+            snprintf(l1, sizeof(l1), "HR: %d bpm", heartRate);
+            printLine(0, l1);
+          } else {
+            printLine(0, "HR: not fitted");
+          }
           snprintf(l2, sizeof(l2), "State:%s", stateText(st));
           printLine(1, l2);
         }
       }
     }
 
-    // --- Serial output every 1 s (for laptop / gateway) ---
+    // --- Serial output every 1 s (for laptop / ReBuild4 gateway) ---
     if (now - lastSerialMs >= 1000UL) {
       lastSerialMs = now;
       char a[10] = "NaN", b[10] = "NaN";
       if (!isnan(temperature)) { fmt1(a, sizeof(a), temperature); fmt1(b, sizeof(b), humidity); }
       Serial.print("T="); Serial.print(a);
       Serial.print(",H="); Serial.print(b);
+      Serial.print(",HR="); Serial.print(hrOk ? heartRate : 0);
+      Serial.print(",HR_OK="); Serial.print(hrOk ? 1 : 0);
       Serial.print(",MOTION="); Serial.print(motionNow ? 1 : 0);
       Serial.print(",VIB="); Serial.print(vibNow ? 1 : 0);
       Serial.print(",IDLE="); Serial.print((now - lastMotionMs) / 1000UL);
