@@ -188,3 +188,32 @@ class ScreeningTestOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+# ----------------- Gemini API & LoRA Filter -----------------
+class AIChatRequest(BaseModel):
+    query: str
+    person_id: int = 1
+    use_lora_filter: bool = True
+    context_limit: int = 25
+
+class LoraFilterMetadata(BaseModel):
+    adapter_id: str
+    rank: int = 8
+    alpha: int = 16
+    target_modules: List[str] = ["q_proj", "v_proj", "clinical_reasoning_head"]
+    patient_cohort: str
+    historical_samples_analyzed: int
+    avg_resting_hr: float
+    avg_temp: float
+    recent_fall_events: int
+    inactivity_episodes: int
+    physio_plan_compliance: str
+    safety_guardrails_passed: bool
+    guardrail_warnings: List[str] = []
+    model_name: str
+
+class AIChatResponse(BaseModel):
+    query: str
+    response: str
+    lora_filter: LoraFilterMetadata
+    timestamp: str

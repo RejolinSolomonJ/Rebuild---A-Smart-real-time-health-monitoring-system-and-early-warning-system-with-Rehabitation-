@@ -22,7 +22,8 @@ from .models import (
 from .schemas import (
     UserLogin, UserOut, PersonCreate, PersonOut, ConsentCreate, ConsentOut,
     ReadingIn, ReadingOut, AlertOut, ExercisePlanCreate, ExercisePlanOut,
-    SessionStart, RepCreate, EffortUpdate, SessionFinish, ScreeningTestCreate, ScreeningTestOut
+    SessionStart, RepCreate, EffortUpdate, SessionFinish, ScreeningTestCreate, ScreeningTestOut,
+    AIChatRequest, AIChatResponse
 )
 from .alerts import AlertDispatcher
 from .serial_reader import SerialIngestionWorker
@@ -48,6 +49,7 @@ try:
     from engine.anomaly import SecondaryAnomalyDetector
     from rehab.scoring import RecoveryScoreCalculator
     from engine.recommender import ExerciseRecommendationEngine
+    from engine.gemini_lora import gemini_lora_engine
 except ImportError:
     from backend.engine.baseline import BaselineCalculator, get_time_bucket, is_resting_state
     from backend.engine.drift import DriftDetector
@@ -57,6 +59,7 @@ except ImportError:
     from backend.engine.anomaly import SecondaryAnomalyDetector
     from backend.rehab.scoring import RecoveryScoreCalculator
     from backend.engine.recommender import ExerciseRecommendationEngine
+    from backend.engine.gemini_lora import gemini_lora_engine
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -1126,6 +1129,38 @@ async def trigger_hardware_simulation(scenario: str = "drift"):
     }
     await ingest_reading_async(reading_data)
     return {"status": "simulated", "scenario": scenario, "reading": reading_data}
+
+# --- Gemini AI with LoRA Patient History Conditioning ---
+@app.post("/api/ai/chat", response_model=AIChatResponse)
+async def consult_clinical_ai(payload: AIChatRequest, db: Session = Depends(get_db)):
+    """
+    Dispatches patient query through Google Gemini foundational model
+    conditioned by the LoRA Patient History Filter (longitudinal vitals,
+    cardiac drift, inactivity, and physical therapy compliance).
+    """
+    res = await gemini_lora_engine.generate_response(
+        query=payload.query,
+        db=db,
+        person_id=payload.person_id,
+        use_lora=payload.use_lora_filter
+    )
+    return res
+
+@app.get("/api/ai/lora-profile")
+def get_lora_profile(person_id: int = 1, db: Session = Depends(get_db)):
+    """
+    Returns the extracted patient longitudinal features and LoRA adapter conditioning tensor.
+    """
+    history = gemini_lora_engine.extract_patient_history(db, person_id=person_id)
+    return {
+        "adapter_id": gemini_lora_engine.adapter_id,
+        "rank": gemini_lora_engine.rank,
+        "alpha": gemini_lora_engine.alpha,
+        "target_modules": gemini_lora_engine.target_modules,
+        "base_model": gemini_lora_engine.base_model,
+        "has_api_key": bool(gemini_lora_engine.api_key),
+        "history_summary": history
+    }
 
 # --- WebSocket Stream ---
 @app.websocket("/ws")
