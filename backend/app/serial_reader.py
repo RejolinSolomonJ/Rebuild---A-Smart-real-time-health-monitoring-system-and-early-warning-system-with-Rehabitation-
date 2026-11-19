@@ -284,25 +284,25 @@ class SerialIngestionWorker:
     async def run_serial_loop(self):
         """
         Async worker loop with resilient auto-reconnect for hardware serial.
+        Automatically attaches to Arduino on COM3 as soon as port becomes available.
         """
         import serial
 
-        while self.running and not self.use_simulator:
+        while self.running:
             target_port = self.pick_target_port()
             if not target_port:
-                logger.info("No hardware COM port found. Waiting 3 seconds before next scan...")
                 self.connected_port = None
                 await asyncio.sleep(3.0)
                 continue
 
-            logger.info(f"Connecting to hardware serial on {target_port} at {self.baud} baud...")
-
             try:
                 self.serial_conn = serial.Serial(target_port, self.baud, timeout=1.0)
                 self.connected_port = target_port
+                self.use_simulator = False
+                self.last_error = None
                 logger.info(f"Hardware serial CONNECTED successfully on {target_port}!")
 
-                while self.running and not self.use_simulator and self.serial_conn and self.serial_conn.is_open:
+                while self.running and self.serial_conn and self.serial_conn.is_open:
                     if self.serial_conn.in_waiting:
                         raw_bytes = self.serial_conn.readline()
                         try:
@@ -315,11 +315,10 @@ class SerialIngestionWorker:
             except Exception as e:
                 err_str = str(e)
                 if "PermissionError" in err_str or "Access is denied" in err_str:
-                    friendly_err = f"Port {target_port} is busy or locked (Access Denied). Please CLOSE the Serial Monitor in Arduino IDE so the application can read live sensor data."
+                    friendly_err = f"Port {target_port} is open in Arduino IDE. Please close the Serial Monitor in Arduino IDE so ReBuild4 can stream live sensor data."
                 else:
                     friendly_err = f"Serial port {target_port} error: {err_str}"
                 self.last_error = friendly_err
-                logger.warning(f"Serial port {target_port} unavailable ({err_str}). Reconnecting in 3 seconds...")
                 if self.serial_conn:
                     try:
                         self.serial_conn.close()
@@ -327,4 +326,4 @@ class SerialIngestionWorker:
                         pass
                     self.serial_conn = None
                 self.connected_port = None
-                await asyncio.sleep(3.0)
+                await asyncio.sleep(2.5)

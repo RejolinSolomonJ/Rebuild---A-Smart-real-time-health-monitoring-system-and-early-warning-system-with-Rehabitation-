@@ -354,6 +354,7 @@ export default function App() {
           person={person}
           currentUser={currentUser}
           currentRole={currentRole}
+          latestReading={latestReading}
           onOpenLogin={() => setShowLogin(true)}
           onSwitchRole={handleSwitchRole}
           onOpenHardware={() => setShowHardware(true)}

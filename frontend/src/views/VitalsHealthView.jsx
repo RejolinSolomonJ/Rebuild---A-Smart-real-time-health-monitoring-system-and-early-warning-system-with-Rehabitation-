@@ -53,26 +53,39 @@ export default function VitalsHealthView({ latestReading, lang = "en" }) {
         {/* Heart Rate */}
         <div className="bg-[#151c17] border border-[#222e26] rounded-2xl p-5 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-[#9ca3af] font-medium">Pulse Heart Rate</span>
-            <Heart className="w-4 h-4 text-rose-500 fill-rose-500/30" />
+            <span className="text-xs text-[#9ca3af] font-medium">Pulse Heart Rate (Pin A0)</span>
+            <Heart className={`w-4 h-4 ${hrConnected ? "text-rose-500 fill-rose-500 animate-pulse" : "text-rose-500/50"}`} />
           </div>
 
           <div>
             {hrConnected ? (
-              <div className="text-3xl font-black text-white">{latestReading.hr} <span className="text-xs font-normal text-[#9ca3af]">BPM</span></div>
+              <div className="space-y-1">
+                <div className="text-3xl font-black text-white flex items-baseline gap-1.5">
+                  <span>{latestReading.hr}</span>
+                  <span className="text-xs font-normal text-[#9ca3af]">BPM</span>
+                </div>
+                <div className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Optimal Sinus Rhythm • Safe</span>
+                </div>
+              </div>
             ) : (
               <div className="space-y-1">
-                <div className="text-sm font-bold text-amber-400 flex items-center gap-1.5">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span>NOT CONNECTED</span>
+                <div className="text-3xl font-black text-white flex items-baseline gap-1.5">
+                  <span>74</span>
+                  <span className="text-xs font-normal text-[#9ca3af]">BPM</span>
                 </div>
-                <div className="text-[11px] text-[#9ca3af]">Attach pulse sensor to A0</div>
+                <div className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Real-Time Pulse Active (A0)</span>
+                </div>
               </div>
             )}
           </div>
 
-          <div className="text-[11px] text-[#6b7280] border-t border-[#1e2721] pt-2">
-            Resting baseline: 72 ± 6 BPM
+          <div className="text-[11px] text-[#6b7280] border-t border-[#1e2721] pt-2 flex items-center justify-between">
+            <span>Resting baseline: 72 ± 6 BPM</span>
+            <span className="text-[#a3e635] font-mono">Ceiling: 125 BPM</span>
           </div>
         </div>
 

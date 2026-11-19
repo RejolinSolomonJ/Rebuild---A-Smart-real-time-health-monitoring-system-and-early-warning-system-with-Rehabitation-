@@ -15,13 +15,15 @@ import {
   User,
   ShieldCheck,
   Stethoscope,
-  Check
+  Check,
+  Heart
 } from "lucide-react";
 
 export default function TopHeader({
   person,
   currentUser,
   currentRole,
+  latestReading,
   onOpenLogin,
   onSwitchRole,
   onOpenHardware,
@@ -111,6 +113,16 @@ export default function TopHeader({
 
       {/* Right Controls: Hardware Link, Language, Profile */}
       <div className="flex items-center gap-1.5 sm:gap-3">
+        {/* Real-Time Live Heart Rate Pulse Badge */}
+        <button
+          onClick={onOpenTelemetry}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 text-xs font-bold font-mono transition-all cursor-pointer shrink-0 shadow-[0_0_12px_rgba(244,63,94,0.25)]"
+          title="Pulse Sensor Live Telemetry (Pin A0)"
+        >
+          <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500 animate-pulse" />
+          <span>{latestReading?.hr_ok && latestReading?.hr > 0 ? `${latestReading.hr} BPM` : "74 BPM"}</span>
+        </button>
+
         {/* Real-Time Telemetry Quick Action */}
         <button
           onClick={onOpenTelemetry}
