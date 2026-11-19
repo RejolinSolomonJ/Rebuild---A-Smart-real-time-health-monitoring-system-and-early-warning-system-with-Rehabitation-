@@ -195,6 +195,7 @@ class AIChatRequest(BaseModel):
     person_id: int = 1
     use_lora_filter: bool = True
     context_limit: int = 25
+    api_key: Optional[str] = None
 
 class LoraFilterMetadata(BaseModel):
     adapter_id: str

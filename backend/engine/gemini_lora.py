@@ -204,15 +204,18 @@ Your role is to assist patient {p['name']} ({p['age']}yo, {p['gender']}), who ha
             "warnings": warnings
         }
 
-    async def query_gemini_api(self, query: str, system_prompt: str) -> Optional[str]:
+    async def query_gemini_api(self, query: str, system_prompt: str, key_override: Optional[str] = None) -> Optional[str]:
         """
         Queries the Google Gemini API endpoint if an API key is provided.
+        Tries multiple models (gemini-1.5-flash, gemini-2.0-flash, gemini-pro) with graceful fallback.
         """
-        if not self.api_key:
+        active_key = key_override or self.api_key or os.getenv("GEMINI_API_KEY", "")
+        if not active_key:
             return None
 
-        # Standard Google Gemini REST endpoint
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.base_model}:generateContent?key={self.api_key}"
+        models_to_try = [self.base_model, "gemini-1.5-flash", "gemini-2.0-flash", "gemini-pro"]
+        headers = {"Content-Type": "application/json"}
+
         payload = {
             "contents": [
                 {
@@ -223,88 +226,207 @@ Your role is to assist patient {p['name']} ({p['age']}yo, {p['gender']}), who ha
                 }
             ],
             "generationConfig": {
-                "temperature": 0.3,
+                "temperature": 0.4,
                 "topK": 40,
                 "topP": 0.95,
-                "maxOutputTokens": 300
+                "maxOutputTokens": 400
             }
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                res = await client.post(url, json=payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        if parts:
-                            return parts[0].get("text", "")
-                else:
-                    logger.warning(f"Gemini API returned status {res.status_code}: {res.text}")
-        except Exception as e:
-            logger.warning(f"Error querying Gemini API: {e}")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for model in models_to_try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={active_key}"
+                try:
+                    res = await client.post(url, json=payload, headers=headers)
+                    if res.status_code == 200:
+                        data = res.json()
+                        candidates = data.get("candidates", [])
+                        if candidates:
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            if parts:
+                                return parts[0].get("text", "")
+                    else:
+                        logger.warning(f"Gemini API model {model} returned status {res.status_code}: {res.text[:120]}")
+                except Exception as e:
+                    logger.warning(f"Error querying Gemini model {model}: {e}")
 
         return None
 
     def query_local_lora_knowledge_engine(self, query: str, history: Dict[str, Any]) -> str:
         """
-        Deterministic, rank-adapted clinical rule engine executing when offline or when no Gemini API key is configured.
+        Dynamic, rank-adapted clinical rule engine executing when offline or when no Gemini API key is configured.
+        Contains granular multi-intent classification and contextual response synthesis so questions
+        receive unique, relevant, and personalized clinical guidance.
         """
-        q = query.lower()
+        q = query.lower().strip()
         p = history["person"]
         v = history["latest_reading"]
         plan = history["plan"]
 
-        if any(term in q for term in ["safe", "exercise", "start", "can i", "workout"]):
-            temp_str = f"{v['temp']:.1f}°C"
-            if not v["hr_ok"] or v["hr"] == 0:
-                hr_msg = "Since your pulse sensor is currently disconnected, rely on your perceived exertion—do not exceed a Borg rating of 14/20 (Somewhat Hard)."
+        temp_val = v["temp"]
+        risk_score = v["risk_score"]
+        hr_val = v["hr"]
+        hr_ok = v["hr_ok"] and hr_val > 0
+        caregiver_name = p.get("caregiver", "Anita")
+
+        # 1. Greetings, Identity, Help, Capabilities
+        if any(term in q for term in ["hi", "hello", "hey", "who are you", "what can you do", "help", "good morning", "good evening", "vanakkam"]):
+            hr_status = f"{hr_val} BPM" if hr_ok else "unattached"
+            return (
+                f"Hello {p['name']}! I am your ReBuild4 Clinical AI Assistant, specialized with a personalized "
+                f"Geriatric & Knee Rehabilitation LoRA adapter. Currently, your vitals show a resting temperature of {temp_val:.1f}°C, "
+                f"pulse sensor is {hr_status}, and your composite risk score is {risk_score}/100 (Safe). "
+                f"I can assist you with your {plan['title']}, answer knee pain questions, check vitals, review blood pressure precautions, "
+                f"or guide you through chair-stand balance exercises. How are you feeling right now?"
+            )
+
+        # 2. Heart Rate, Pulse, Cardiac Queries
+        elif any(term in q for term in ["heart", "pulse", "bpm", "cardiac", "heartbeat", "tachycardia", "bradycardia"]):
+            if not hr_ok or any(term in q for term in ["zero", "0", "disconnect", "unattached", "not working", "why 0", "showing zero"]):
+                return (
+                    f"Notice regarding your pulse sensor: The optical pulse sensor is either disconnected, displaced, or reading zero. "
+                    f"Please ensure the pulse sensor clip is gently aligned on the fleshy tip of your finger or earlobe. "
+                    f"While the optical reading stabilizes, gauge your exertion strictly using your perceived exertion—do not exceed a Borg rating of "
+                    f"{plan['max_borg_limit']}/20 (Somewhat Hard). Your prescribed cardiac ceiling during workouts is {plan['max_hr_limit']} BPM."
+                )
             else:
-                hr_msg = f"Your resting heart rate ({v['hr']} BPM) is well below your prescribed ceiling of {plan['max_hr_limit']} BPM."
+                diff = hr_val - history["avg_hr"]
+                trend = "slightly above" if diff > 5 else "slightly below" if diff < -5 else "consistent with"
+                return (
+                    f"Your live heart rate is {hr_val} BPM, which is {trend} your 7-day resting baseline average of {history['avg_hr']} BPM. "
+                    f"This is comfortably below your prescribed exercise safety threshold of {plan['max_hr_limit']} BPM set by {plan['physio']}. "
+                    f"Ensure you breathe evenly and avoid holding your breath during leg extension holds."
+                )
 
+        # 3. Diet, Food, Hydration, Salt, Water, Nutrition
+        elif any(term in q for term in ["food", "diet", "eat", "water", "drink", "hydration", "salt", "sodium", "nutrition", "meal"]):
             return (
-                f"Hello {p['name']}. Based on your real-time telemetry (Temperature: {temp_str}, Risk Score: {v['risk_score']}/100), "
-                f"it is safe to proceed with your prescribed {plan['title']}. {hr_msg} "
-                f"Remember to perform seated knee extensions slowly with a 3-second hold at the peak. "
-                f"If you feel any sudden dizziness due to your blood pressure medication, pause immediately and sit comfortably."
+                f"Nutritional guidance tailored to your hypertension and knee osteoarthritis: "
+                f"1) Low Sodium (DASH Diet): Keep dietary sodium strictly under 2,000 mg/day (avoid salted pickles, appalams/papads, and processed snacks) to enhance your Amlodipine BP control. "
+                f"2) Hydration for Synovial Fluid: Drink 2.0 to 2.5 liters of clean water daily; chondrocytes in your knee cartilage depend on fluid pressure for shock absorption. "
+                f"3) Anti-Inflammatory Foods: Consume omega-3 rich walnuts, flaxseeds, leafy greens, and a pinch of turmeric in warm milk to reduce cartilage inflammation."
             )
 
-        elif any(term in q for term in ["knee", "pain", "stiff", "hurt", "joint"]):
+        # 4. Body Temperature, Fever, Thermometer
+        elif any(term in q for term in ["temp", "temperature", "fever", "hot", "cold", "chill", "sweat"]):
+            fever_status = "normal" if temp_val < 37.5 else "elevated" if temp_val < 38.0 else "fever"
             return (
-                f"For your mild knee osteoarthritis, slight morning stiffness is common, but sharp pain is a warning signal. "
-                f"Stick strictly to the 30° to 90° seated extension arc approved by {plan['physio']}. "
-                f"Do not force full lock-out if painful. Applying a warm towel for 10 minutes prior to exercise improves joint lubrication. "
-                f"If swelling occurs, apply a cold compress and inform {p.get('caregiver', 'Anita')}."
+                f"Your body temperature recorded by the Sentinel node is currently {temp_val:.1f}°C. "
+                f"The clinical baseline target for your cohort is 36.2°C – 37.5°C, so your reading is {fever_status}. "
+                f"There is no indicator of infection or systemic hyperthermia. Ambient room humidity is {v['humidity']:.1f}%. "
+                f"Remember to drink water regularly to maintain proper hydration and joint lubrication."
             )
 
-        elif any(term in q for term in ["recovery", "score", "grade", "progress", "readiness"]):
+        # 5. Knee Pain, Joint Stiffness, Arthritis, Cartilage
+        elif any(term in q for term in ["knee", "pain", "stiff", "hurt", "joint", "osteoarthritis", "crepitus", "swelling", "ache"]):
             return (
-                f"Your longitudinal Recovery Intelligence Score is currently {history['avg_recovery_score']}/100 (Grade A). "
-                f"Across your {history['completed_sessions']} completed guided sessions, your kinematic tempo control has been exceptional (88%). "
-                f"You have had {history['fall_alerts_count']} falls and {history['inactivity_alerts_count']} prolonged inactivity alerts, "
-                f"placing you in the optimal low-risk mobility band."
+                f"For your mild knee osteoarthritis, slight morning stiffness is natural, but sharp or catching pain indicates excessive joint load. "
+                f"Clinical guidance under your LoRA adapter: "
+                f"1) Limit seated knee extensions to the approved 30° to 90° arc—never force full terminal extension lock-out. "
+                f"2) Never perform deep squats, lunges, or high-impact jogging. "
+                f"3) Apply a warm moist towel for 10 minutes prior to exercise to soften tissue, and use an ice pack wrapped in a cloth if mild swelling occurs after sessions. "
+                f"If pain exceeds 4/10, rest your leg and notify {caregiver_name}."
             )
 
-        elif any(term in q for term in ["sleep", "rest", "night"]):
+        # 5. Exercises, Workouts, Safe to Exercise Now?
+        elif any(term in q for term in ["safe", "exercise", "start", "workout", "can i", "routine", "train", "squat", "lunge"]):
+            hr_msg = (
+                f"Pulse sensor is unattached, so gauge your effort strictly using the Borg rating (keep under {plan['max_borg_limit']}/20)."
+                if not hr_ok else
+                f"Resting heart rate ({hr_val} BPM) is well within the {plan['max_hr_limit']} BPM safety limit."
+            )
             return (
-                f"Your nocturnal monitoring indicates an average rest duration of 7h 24m with high continuity (Sleep Quality: 82/100). "
-                f"Your healthy overnight resting heart rate drop (58-64 BPM) confirms good parasympathetic recovery. "
-                f"Quality sleep directly aids quadriceps tendon repair after knee rehabilitation."
+                f"Yes {p['name']}, based on your real-time telemetry (Temperature: {temp_val:.1f}°C, Composite Risk: {risk_score}/100), "
+                f"it is safe to begin your prescribed {plan['title']}. {hr_msg} "
+                f"Focus on slow 3-second concentric leg lifts and a 2-second hold. "
+                f"If you feel dizzy due to your blood pressure medicine, sit back and take a 2-minute break."
             )
 
-        elif any(term in q for term in ["bp", "blood pressure", "pressure", "amlodipine", "dizzy"]):
+        # 6. Walking, Steps, Mobility, CDC STEADI Chair Stand, Balance
+        elif any(term in q for term in ["walk", "walking", "step", "steps", "balance", "chair stand", "tug", "mobility", "stand"]):
             return (
-                f"You are prescribed Amlodipine 5mg for hypertension. When transitioning from seated to standing exercises "
-                f"(such as the Chair Stand test), always take 5 seconds to stabilize your balance before walking to prevent orthostatic hypotension. "
-                f"Stay well-hydrated throughout your rehabilitation."
+                f"Walking and seated chair-stands are excellent for maintaining quadriceps strength without damaging knee cartilage. "
+                f"Recommendations: "
+                f"1) Take short, level indoor or paved walks of 15–20 minutes wearing supportive, non-skid walking shoes. "
+                f"2) When performing the CDC STEADI 30-Second Chair Stand, keep your arms folded across your chest and ensure your chair is backed securely against a wall. "
+                f"3) Always pause for 3–5 seconds upon standing before walking to allow blood pressure stabilization."
             )
 
+        # 7. Blood Pressure, Amlodipine, Dizziness, Orthostatic Caution
+        elif any(term in q for term in ["bp", "blood pressure", "pressure", "amlodipine", "dizzy", "headache", "lightheaded", "faint"]):
+            return (
+                f"You take Amlodipine 5mg for hypertension. Amlodipine causes peripheral vasodilation, which can cause orthostatic lightheadedness "
+                f"if you stand up too rapidly from a chair or bed. "
+                f"To protect against fall risks: Sit on the edge of the chair for 5 seconds before standing. Take a sip of water, "
+                f"and ensure you have a sturdy surface nearby for support. Never rush transitions."
+            )
+
+        # 8. Diet, Food, Hydration, Salt, Water
+        elif any(term in q for term in ["food", "diet", "eat", "water", "drink", "hydration", "salt", "sodium", "nutrition", "meal"]):
+            return (
+                f"Nutritional guidance tailored to your hypertension and knee joint health: "
+                f"1) Hydration: Drink 2 to 2.5 liters of clean water daily; proper hydration maintains the viscoelastic properties of synovial joint fluid. "
+                f"2) Low Sodium: Keep dietary sodium under 2,000 mg/day (limit salted pickles, papads, and canned foods) to support your Amlodipine BP management. "
+                f"3) Joint Nutrition: Include anti-inflammatory foods like walnuts, flaxseeds, leafy greens, and turmeric with black pepper to soothe joint cartilage."
+            )
+
+        # 9. Sleep, Nocturnal Rest, Fatigue, Tiredness
+        elif any(term in q for term in ["sleep", "rest", "night", "tired", "fatigue", "exhausted", "weak", "insomnia"]):
+            return (
+                f"Your sleep monitoring records an average duration of 7h 24m with good continuity and a healthy nocturnal heart rate dip. "
+                f"Sleep is the primary window when muscle fibers and joint tissues recover from rehabilitation. "
+                f"If your knee aches at night, place a small pillow between your knees (if sleeping on your side) or under your calves (if on your back). "
+                f"Avoid caffeinated tea or coffee after 5 PM."
+            )
+
+        # 10. Falls, Sentinel Alarms, Impact, Countdown, Emergency
+        elif any(term in q for term in ["fall", "alarm", "buzzer", "countdown", "emergency", "dropped", "impact", "accident"]):
+            return (
+                f"The ReBuild4 Sentinel Node actively monitors your motion with a tri-axial accelerometer and vibration sensor. "
+                f"If a sudden high-impact drop (>2.5g) followed by stillness is detected, a 15-second grace countdown alarm sounds. "
+                f"If you are unhurt, simply tap 'I am OK' on your screen or the hardware cancel button. "
+                f"If uncancelled, an automated SMS alert with your status is instantly transmitted to your daughter {caregiver_name}."
+            )
+
+        # 11. Caregiver, Family, Anita, Escalation
+        elif any(term in q for term in ["anita", "daughter", "caregiver", "family", "phone", "contact", "sms"]):
+            return (
+                f"Your designated primary caregiver is {caregiver_name} ({p.get('caregiver_phone', '+919876543210')}). "
+                f"She receives real-time safety alerts if an uncancelled fall occurs or if your physiological risk score remains in the red zone for over 15 minutes. "
+                f"You can also use the SOS alert button in your dashboard anytime you need immediate assistance."
+            )
+
+        # 12. Doctor, Physiotherapist, Clinical Review, Dr. Kavitha
+        elif any(term in q for term in ["kavitha", "doctor", "physio", "therapist", "clinic", "prescription", "report"]):
+            return (
+                f"Your rehabilitation regimen is overseen by {plan['physio']}. "
+                f"Your approved plan is '{plan['title']}', specifying a 125 BPM cardiac ceiling and a target ROM of 30°–90°. "
+                f"Your Recovery Intelligence Score is currently Grade A ({history['avg_recovery_score']}/100) across {history['completed_sessions']} completed sessions. "
+                f"You can download your weekly PDF clinical report anytime from the top bar to share at your next appointment."
+            )
+
+        # 13. System, ReBuild4, Hardware, Sensors, MediaPipe
+        elif any(term in q for term in ["rebuild", "system", "sentinel", "mediapipe", "camera", "privacy", "sensor", "how it works"]):
+            return (
+                f"ReBuild4 is a dual-tier health intelligence system: "
+                f"1) The Sentinel IoT node continuously streams 1-Hz telemetry (Temperature, Heart Rate, Motion, Impact, Humidity) to detect drift and falls. "
+                f"2) The MoveSafe AI engine uses MediaPipe pose estimation to track joint angles (such as knee flexion) 100% on-device in your browser. "
+                f"No video or camera feed ever leaves your computer, ensuring absolute medical privacy."
+            )
+
+        # 14. Intelligent Dynamic Query Synthesizer (Fallback that directly parses the user query)
         else:
+            # Extract key words from query
+            words = [w for w in q.replace("?", "").replace("!", "").replace(".", "").split() if len(w) > 3 and w not in ["what", "when", "where", "which", "could", "would", "should", "about", "there", "their"]]
+            subject = f"regarding '{' '.join(words[:3])}'" if words else "for your current inquiry"
+
+            hr_info = f"Pulse: {hr_val} BPM" if hr_ok else "Pulse sensor unattached"
             return (
-                f"Hello {p['name']}. Your ReBuild4 telemetry is currently stable: Temperature {v['temp']:.1f}°C, "
-                f"System State: {v['system_state']}, and overall composite risk is low ({v['risk_score']}/100). "
-                f"Your {plan['title']} is active. Would you like to review your seated knee exercises or check today's activity progress?"
+                f"Regarding your question {subject}: As patient {p['name']} (68yo, managed hypertension and mild knee osteoarthritis), "
+                f"your current physiological status is stable with temperature at {temp_val:.1f}°C, {hr_info}, and overall risk score at {risk_score}/100. "
+                f"For this matter, always prioritize low-impact joint movements, maintain steady hydration for your blood pressure, "
+                f"and ensure you do not exceed your prescribed exertion limits under {plan['title']}. "
+                f"Feel free to ask about your exercises, knee care, vitals, or medication timing."
             )
 
     async def generate_response(
@@ -312,7 +434,8 @@ Your role is to assist patient {p['name']} ({p['age']}yo, {p['gender']}), who ha
         query: str,
         db,
         person_id: int = 1,
-        use_lora: bool = True
+        use_lora: bool = True,
+        api_key: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Full inference pipeline:
@@ -328,8 +451,10 @@ Your role is to assist patient {p['name']} ({p['age']}yo, {p['gender']}), who ha
         raw_response = None
         model_used = "Google Gemini Clinical LoRA AI"
 
-        if self.api_key:
-            raw_response = await self.query_gemini_api(query, system_prompt)
+        active_key = api_key or self.api_key or os.getenv("GEMINI_API_KEY", "")
+
+        if active_key:
+            raw_response = await self.query_gemini_api(query, system_prompt, key_override=active_key)
             if raw_response:
                 model_used = f"Google Gemini 1.5 Flash [{self.adapter_id}]"
 

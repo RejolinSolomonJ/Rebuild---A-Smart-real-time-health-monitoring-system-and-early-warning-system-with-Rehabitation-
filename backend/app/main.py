@@ -1195,9 +1195,30 @@ async def consult_clinical_ai(payload: AIChatRequest, db: Session = Depends(get_
         query=payload.query,
         db=db,
         person_id=payload.person_id,
-        use_lora=payload.use_lora_filter
+        use_lora=payload.use_lora_filter,
+        api_key=payload.api_key
     )
     return res
+
+@app.post("/api/ai/set-key")
+def set_gemini_key(payload: Dict[str, str]):
+    """
+    Dynamically save or update the Google Gemini API key in memory.
+    """
+    key = payload.get("api_key", "").strip()
+    gemini_lora_engine.api_key = key
+    return {"status": "ok", "configured": bool(key)}
+
+@app.get("/api/ai/key-status")
+def get_gemini_key_status():
+    """
+    Checks if a live Google Gemini API key is configured.
+    """
+    return {
+        "configured": bool(gemini_lora_engine.api_key or os.getenv("GEMINI_API_KEY")),
+        "adapter_id": gemini_lora_engine.adapter_id,
+        "base_model": gemini_lora_engine.base_model
+    }
 
 @app.get("/api/ai/lora-profile")
 def get_lora_profile(person_id: int = 1, db: Session = Depends(get_db)):
