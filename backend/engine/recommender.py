@@ -608,7 +608,7 @@ class ExerciseRecommendationEngine:
         # 3. OPTIMAL GREEN STATE -> Auto-assigns Full Functional Active Protocol
         else:
             tier = "standard_active"
-            tier_name = "Auto-Assigned: Active Functional Rehabilitation"
+            tier_name = "Auto-Assigned: Full Functional Active Rehabilitation"
             can_exercise = True
             reasons.append(f"Vitals optimal (HR {hr:.0f} BPM, Temp {temp:.1f} °C, SpO2 {spo2:.0f}%, Humidity {humidity:.1f}%).")
             reasons.append("Patient afebrile with zero reported pain.")
